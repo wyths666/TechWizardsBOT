@@ -1,35 +1,35 @@
-# Инструкции по настройке проекта
+# Project Name - Project Number
+Краткое описание сути проекта. Что он делает и зачем нужен.
 
-## Шаг 1: Получение Токен бота
 
-1. Перейдите в [BotFather](https://t.me/BotFather)
-2. Скопируйте Токен вашего телеграмм бота
+### Env
 
-## Шаг 2: Загрузка переменных в окружение
+```
+BOT_TOKEN=Токен Бота
+BOT_ADMINS=ТГ Айди админов бота в формате (123,123,123)
 
-1. Создайте файл `.env` в корневой папке проекта и заполните его значениями переменных:
+API_TOKEN=Токен доступа к АПИ
 
-    ```
-   BOT_TOKEN=Токен бота
+POSTGRES_USER=Юзер БД
+POSTGRES_NAME=Имя БД
+POSTGRES_HOST=Хост БД
+POSTGRES_PORT=Порт БД
+POSTGRES_PASSWORD=Пароль от БД
 
-   MODERATORS=moderator_user_id_1,moderator_user_id_2
-   RESPONSIBLE=responsible_user_id_1,responsible_user_id_2
-   COMMISSION=comission_user_id_1,comission_user_id_2
-   
-   DB_NAME=
-   DB_USER=
-   DB_PASSWORD=
-   DB_HOST=
-   DB_PORT=
-    ```
+REDIS_NAME=Номер бд
+REDIS_HOST=Хост БД
+REDIS_PORT=Порт БД
+REDIS_PASSWORD=Пароль от БД
+REDIS_USER=Юзер БД
 
-2. Скачайте необходимые проекту библиотеки командой:
+MONGO_NAME=Имя БД
+MONGO_HOST=Хост БД
+MONGO_PORT=Порт БД
+```
 
-    ```
-    pip install -r requirements.txt
-    ```
+### Launch
+Запуск через Docker Compose.
 
-## Подробнее
-Модератор - человек, которому приходят новые НеоИдеи. Может использовать /admin.
-Член комиссии - человек, который голосует за НеоИдеи. Может использовать /vote.
-Ответственный - человек, которого назначают ответственным за выполнение НеоИдеи.
+```
+docker compose up --build -d
+```
