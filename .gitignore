@@ -21,6 +21,7 @@ wheels/
 **/.venv/
 **/node_modules/
 *.env
+!example.env
 redis.conf
 
 # Logs folders
