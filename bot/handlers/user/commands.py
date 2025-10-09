@@ -126,46 +126,56 @@ async def process_screenshot(msg: Message, state: FSMContext):
         return
 
     user_id = msg.from_user.id
-
-    # ✅ Создаем лок для пользователя, если нет
     if user_id not in user_locks:
         user_locks[user_id] = Lock()
 
-    # ✅ БЛОКИРУЕМ обработку для этого пользователя
     async with user_locks[user_id]:
-        # ✅ Получаем текущие данные
         data = await state.get_data()
-
-        # ✅ Если клавиатура уже есть - удаляем ее
-        phone_card_message_id = data.get("phone_card_message_id")
-        if phone_card_message_id:
-            try:
-                await bot.delete_message(chat_id=msg.chat.id, message_id=phone_card_message_id)
-            except Exception:
-                pass  # Игнорируем ошибки удаления
-
-        # ✅ Обновляем данные
         largest_photo = msg.photo[-1]
         file_id = largest_photo.file_id
 
         current_photos = data.get("photo_file_ids", [])
         current_photos.append(file_id)
 
-        # ✅ СОЗДАЕМ новое сообщение с клавиатурой
-        sent_msg = await msg.answer(
-            text=f"📸 Добавлено скриншотов: {len(current_photos)}\n\n{treg.phone_or_card_text}",
-            reply_markup=tmenu.phone_or_card_ikb()
-        )
-
-        # ✅ Сохраняем обновленные данные
+        # Сохраняем данные
         await state.update_data(
             photo_file_ids=current_photos,
             review_text=data.get("review_text", "") or msg.caption or "",
-            screenshot_received=True,
-            phone_card_message_id=sent_msg.message_id
+            screenshot_received=True
         )
 
+        # === РЕДАКТИРУЕМ существующее сообщение или создаём новое ===
+        existing_msg_id = data.get("phone_card_message_id")
+
+        new_text = f"📸 Добавлено скриншотов: {len(current_photos)}\n\n{treg.phone_or_card_text}"
+
+        if existing_msg_id:
+            # Редактируем существующее сообщение
+            try:
+                await bot.edit_message_text(
+                    chat_id=msg.chat.id,
+                    message_id=existing_msg_id,
+                    text=new_text,
+                    reply_markup=tmenu.phone_or_card_ikb()
+                )
+            except Exception as e:
+                if "message is not modified" not in str(e):
+                    print(f"Ошибка редактирования: {e}")
+        else:
+            # Первый раз — отправляем новое сообщение
+            sent_msg = await msg.answer(
+                text=new_text,
+                reply_markup=tmenu.phone_or_card_ikb()
+            )
+            await state.update_data(phone_card_message_id=sent_msg.message_id)
+
         await state.set_state(treg.RegState.waiting_for_phone_or_card)
+
+        # Удаляем сообщение пользователя (опционально, для чистоты)
+        # try:
+        #     await msg.delete()
+        # except:
+        #     pass
 
 @router.message(StateFilter(treg.RegState.waiting_for_phone_number))
 async def process_phone(msg: Message, state: FSMContext):
