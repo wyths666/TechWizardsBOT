@@ -2,6 +2,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.state import StatesGroup, State
 
 
+
 class RegState(StatesGroup):
     waiting_for_code = State()
     waiting_for_screenshot = State()
