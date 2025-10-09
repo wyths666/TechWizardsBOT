@@ -26,7 +26,7 @@ async def startup(bot: Bot) -> None:
     :return:
     """
     # Init dbs
-    await init_psql()
+    # await init_psql()
     # Setting bot
     await bot.delete_webhook()
     await bot.set_my_commands(
