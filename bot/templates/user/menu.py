@@ -14,7 +14,7 @@ class MenuCallback(CallbackData, prefix='menu'):
 
 def support_ikb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(text="Тех. поддержка", url="@EkaterinaKazantseva31"))
+    builder.add(InlineKeyboardButton(text="Тех. поддержка", url="https://t.me/EkaterinaKazantseva31"))
     return builder.as_markup()
 
 

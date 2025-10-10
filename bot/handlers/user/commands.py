@@ -37,16 +37,33 @@ async def start_new_user(msg: Message, state: FSMContext):
     await msg.delete()
 
 
+
+@router.message(Command("start"))
+async def start_for_registered(msg: types.Message, state: FSMContext):
+    """
+    /start для уже зарегистрированных пользователей.
+    Предлагает ввести новый секретный код.
+    """
+    await state.clear()  # сбрасываем любое предыдущее состояние
+    await msg.answer(text=treg.start_text)
+    await state.set_state(treg.RegState.waiting_for_code)
+    await msg.delete()
+
+
+
 @router.message(StateFilter(treg.RegState.waiting_for_code))
 async def process_code(msg: Message, state: FSMContext):
-    code = msg.text.strip().upper()
+    code = msg.text.strip()
 
     code_valid = await get_and_delete_code(code)
     if not code_valid:
         await msg.answer(text=treg.code_not_found_text, reply_markup=tmenu.support_ikb())
         return
 
-    CHANNEL_USERNAME = "@zdorovkakslon"
+    # Отправляем сообщение о выигрыше
+    await msg.answer(text=treg.code_found_text)
+
+    CHANNEL_USERNAME = "@tech_repost"
     is_subscribed = await check_user_subscription(bot, msg.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
@@ -54,7 +71,6 @@ async def process_code(msg: Message, state: FSMContext):
             text=treg.not_subscribed_text,
             reply_markup=tmenu.check_subscription_ikb()
         )
-        # Сохраняем код для последующей проверки
         await state.update_data(entered_code=code)
         return
 
@@ -71,14 +87,14 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
         await call.message.delete()
         return
 
-    CHANNEL_USERNAME = "@zdorovkakslon"
+    CHANNEL_USERNAME = "@tech_repost"
     is_subscribed = await check_user_subscription(bot, call.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
         await call.answer("Вы всё ещё не подписаны. Попробуйте снова.", show_alert=True)
         return
 
-    # Успешно — идём к отзыву
+
     await call.message.delete()
     await proceed_to_review(call.message, state, code)
     await call.answer()
@@ -86,8 +102,8 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
 
 async def proceed_to_review(msg: Message, state: FSMContext, code: str):
     """Переход к отзыву после успешной проверки кода и подписки"""
-    # Генерируем claim_id и создаём заявку
     claim_id = await Claim.generate_next_claim_id()
+
     await Claim.create(
         claim_id=claim_id,
         user_id=msg.from_user.id,
@@ -95,14 +111,14 @@ async def proceed_to_review(msg: Message, state: FSMContext, code: str):
         code_status="valid",
         process_status="process",
         claim_status="pending",
-        payment_method="unknown"
-    )
-    await state.update_data(claim_id=claim_id, entered_code=code)
+        payment_method="unknown",
+        review_text="",
+        photo_file_ids=[]
 
-    await msg.answer(
-        text=treg.review_request_text,
-        reply_markup=tmenu.send_screenshot_ikb()
     )
+
+    await state.update_data(claim_id=claim_id, entered_code=code)
+    await msg.answer(text=treg.review_request_text, reply_markup=tmenu.send_screenshot_ikb())
     await state.set_state(treg.RegState.waiting_for_screenshot)
 
 
@@ -177,11 +193,7 @@ async def process_screenshot(msg: Message, state: FSMContext):
 
         await state.set_state(treg.RegState.waiting_for_phone_or_card)
 
-        # Удаляем сообщение пользователя (опционально, для чистоты)
-        # try:
-        #     await msg.delete()
-        # except:
-        #     pass
+
 
 @router.message(StateFilter(treg.RegState.waiting_for_phone_number))
 async def process_phone(msg: Message, state: FSMContext):
@@ -217,19 +229,26 @@ async def process_bank(msg: Message, state: FSMContext):
 
 
 async def finalize_claim(msg: Message, state: FSMContext):
-    """Завершает заявку и отправляет её менеджеру"""
+    """Завершает заявку и отправляет её в группу менеджеров"""
     data = await state.get_data()
-    claim_id = data.get("claim_id")  # ← берём из состояния
+    claim_id = data.get("claim_id")
 
     if not claim_id:
-        # На всякий случай — но не должно происходить
         await msg.answer("Ошибка: заявка не найдена.")
+        return
+
+    claim = await Claim.get(claim_id=claim_id)
+    if not claim:
+        await msg.answer("Ошибка: заявка не найдена в базе.")
         return
 
     phone = data.get('phone')
     card = data.get('card')
     bank = data.get('bank', '')
+    review_text = data.get('review_text', '—')
+    photo_ids = data.get("photo_file_ids", [])
 
+    # === Формируем текст заявки ===
     if phone:
         payment_info = f"Номер телефона: {phone}"
         bank_info = f"Банк: {bank}\n"
@@ -239,45 +258,68 @@ async def finalize_claim(msg: Message, state: FSMContext):
 
     claim_text = (
         f"Номер заявки: {claim_id}\n"
-        f"Текст: {data.get('review_text', '—')}\n"
+        f"Текст: {review_text}\n"
         f"{bank_info}"
         f"{payment_info}\n"
         f"Скриншоты:"
     )
 
-    MANAGER_GROUP_ID = 6627225181
-    sent_claim = await bot.send_message(
-        chat_id=MANAGER_GROUP_ID,
-        text=claim_text,
-        reply_markup=tadmin.claim_action_ikb(claim_id)
-    )
+    # === Отправка в группу ===
+    MANAGER_GROUP_ID = -4945969550
 
-    # Отправка фото
-    photo_ids = data.get("photo_file_ids", [])
+
+
+
+    # === Отправка фото ===
     if photo_ids:
         if len(photo_ids) == 1:
             await bot.send_photo(chat_id=MANAGER_GROUP_ID, photo=photo_ids[0])
+            await bot.send_message(
+                chat_id=MANAGER_GROUP_ID,
+                text=claim_text,
+                reply_markup=tadmin.claim_action_ikb(claim_id)
+            )
         else:
             media_group = [types.InputMediaPhoto(media=fid) for fid in photo_ids]
             try:
                 await bot.send_media_group(chat_id=MANAGER_GROUP_ID, media=media_group)
-            except:
+                await bot.send_message(
+                    chat_id=MANAGER_GROUP_ID,
+                    text=claim_text,
+                    reply_markup=tadmin.claim_action_ikb(claim_id)
+                )
+            except Exception as e:
+                print(f"Ошибка отправки медиагруппы: {e}")
                 for fid in photo_ids:
-                    await bot.send_photo(chat_id=MANAGER_GROUP_ID, photo=fid)
+                    await bot.send_photo(chat_id=MANAGER_GROUP_ID, photo=fid
+    )
 
-    # === Обновляем заявку в MongoDB ===
-    claim = await Claim.get(claim_id=claim_id)
-    if claim:
-        await claim.update(
-            process_status="complete",
-            claim_status="confirm",
-            payment_method="phone" if phone else "card",
-            phone=phone,
-            card=card,
-            bank=bank if phone else None,
-            review_text=data.get('review_text', ''),
-            photo_file_ids=photo_ids
-        )
+        # === Подготавливаем данные для обновления ===
+        update_data = {
+            "process_status": "complete",
+            "claim_status": "confirm",
+            "payment_method": "phone" if phone else "card",
+            "review_text": review_text,
+            "photo_file_ids": photo_ids
+        }
 
-    await msg.answer(text=treg.success_text)
-    await state.clear()
+        # Добавляем данные в зависимости от выбранного способа оплаты
+        if phone:  # Если выбран телефон
+            update_data["phone"] = phone
+            update_data["bank"] = bank  # ✅ Сохраняем банк ВСЕГДА для телефона
+            update_data["card"] = None  # ✅ Явно сбрасываем карту
+        elif card:  # Если выбрана карта
+            update_data["card"] = card
+            update_data["phone"] = None  # ✅ Явно сбрасываем телефон
+            update_data["bank"] = None  # ✅ Явно сбрасываем банк
+
+        # === Обновляем заявку ===
+        # Фильтруем None значения перед обновлением (опционально)
+        filtered_update_data = {k: v for k, v in update_data.items() if v is not None}
+        for field, value in filtered_update_data.items():
+            setattr(claim, field, value)
+        await claim.replace()
+
+        # === Завершение ===
+        await msg.answer(text=treg.success_text)
+        await state.clear()

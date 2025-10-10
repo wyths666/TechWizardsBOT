@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 from beanie import Document
 from datetime import datetime
 
@@ -111,3 +111,4 @@ class Claim(ModelAdmin):
             last_num = int(last_claim[0].claim_id)
             return f"{last_num + 1:06d}"
         return "000001"
+

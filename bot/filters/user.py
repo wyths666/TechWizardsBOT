@@ -1,7 +1,7 @@
 from aiogram.filters import BaseFilter
 from aiogram.types import Message
 
-from db.psql.models.models import User
+from db.beanie.models import User
 
 
 # class NewUser(BaseFilter):
