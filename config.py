@@ -85,7 +85,7 @@ class MongoConfig(BaseSettings):
     HOST: str
 
     class Config:
-        env_prefix = 'Mongo_'
+        env_prefix = 'MONGO_'
         env_file = '.env'
         extra = 'ignore'
 
@@ -103,13 +103,26 @@ class ApiConfig(BaseSettings):
         extra = 'ignore'
 
 
+class MysqlConfig(BaseSettings):
+    HOST: str
+    PORT: int = 3306
+    USER: str
+    PASSWORD: str
+    DATABASE: str
+
+    class Config:
+        env_prefix = 'MYSQL_'
+        env_file = '.env'
+        extra = 'ignore'
+
 class Config:
-    psql = PostgresConfig()  # type: ignore
-    redis = RedisConfig()  # type: ignore
-    mongo = MongoConfig()  # type: ignore
-    api = ApiConfig()  # type: ignore
-    bot = BotConfig()  # type: ignore
+    psql = PostgresConfig()
+    redis = RedisConfig()
+    mongo = MongoConfig()
+    api = ApiConfig()
+    bot = BotConfig()
     proj = ProjConfig()
+    mysql = MysqlConfig()
 
 
 cnf = Config()

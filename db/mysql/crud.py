@@ -1,24 +1,19 @@
 import aiomysql
 from contextlib import asynccontextmanager
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-MYSQL_CONFIG = {
-    'host': os.getenv('MYSQL_HOST', '185.178.47.172'),
-    'port': int(os.getenv('MYSQL_PORT', 3306)),
-    'user': os.getenv('MYSQL_USER', 'admin_lovelin2'),
-    'password': os.getenv('MYSQL_PASSWORD', ''),
-    'db': os.getenv('MYSQL_DATABASE', 'admin_lovelin2'),
-    'charset': 'utf8mb4',
-    'autocommit': True
-}
+from config import cnf
 
 
 @asynccontextmanager
 async def get_connection():
-    conn = await aiomysql.connect(**MYSQL_CONFIG)
+    conn = await aiomysql.connect(
+        host=cnf.mysql.HOST,
+        port=cnf.mysql.PORT,
+        user=cnf.mysql.USER,
+        password=cnf.mysql.PASSWORD,
+        db=cnf.mysql.DATABASE,
+        charset='utf8mb4',
+        autocommit=True
+    )
     try:
         yield conn
     finally:
@@ -26,13 +21,12 @@ async def get_connection():
 
 
 async def init_mysql():
-    """Проверяем наличие таблицы"""
     async with get_connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute("SHOW TABLES LIKE 'oc_qrcode'")
             exists = await cur.fetchone()
             if not exists:
-                raise Exception("Таблица oc_qrcode не найдена!")
+                raise Exception("Таблица oc_qrcode не найдена в базе MySQL!")
 
 
 async def get_and_delete_code(code_text: str):

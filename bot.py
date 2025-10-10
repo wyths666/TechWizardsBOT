@@ -10,7 +10,13 @@ from bot.handlers import routers
 from config import cnf
 from core.bot import bot
 from core.logger import bot_logger as logger
-from db.psql.crud.crud import init_psql
+
+from db.beanie.models import document_models
+from beanie import init_beanie
+from motor.motor_asyncio import AsyncIOMotorClient
+
+from db.mysql.crud import init_mysql
+
 
 dp = Dispatcher(
     bot=bot,
@@ -21,19 +27,27 @@ dp.include_routers(*routers)
 
 async def startup(bot: Bot) -> None:
     """
-        Активируется при выключении
-    :param bot: Bot
-    :return:
+    Активируется при запуске бота
     """
-    # Init dbs
-    # await init_psql()
-    # Setting bot
+    # === Инициализация MongoDB (Beanie) ===
+    mongo_client = AsyncIOMotorClient(cnf.mongo.URL)
+    await init_beanie(
+        database=mongo_client[cnf.mongo.NAME],
+        document_models=document_models
+    )
+    logger.info("✅ MongoDB (Beanie) подключена")
+
+    # === Инициализация MySQL ===
+    await init_mysql()
+    logger.info("✅ MySQL подключена")
+
+    # === Настройка команд бота ===
     await bot.delete_webhook()
     await bot.set_my_commands(
         commands=cnf.bot.COMMANDS,
         scope=BotCommandScopeDefault()
     )
-    for admin in cnf.bot.ADMINS:
+    for admin in cnf.bot.ADMINS or []:
         with contextlib.suppress(TelegramBadRequest):
             await bot.set_my_commands(
                 cnf.bot.COMMANDS + cnf.bot.ADMIN_COMMANDS,
@@ -45,24 +59,16 @@ async def startup(bot: Bot) -> None:
 
 async def shutdown(bot: Bot) -> None:
     """
-        Активируется при выключении
-    :param bot: Bot
-    :return:
+    Активируется при выключении
     """
     await bot.close()
     await dp.stop_polling()
-
     logger.info('=== Bot stopped ===')
 
 
 async def main() -> None:
-    """
-        Start the bot
-    :return:
-    """
     dp.startup.register(startup)
     dp.shutdown.register(shutdown)
-
     await dp.start_polling(bot)
 
 
