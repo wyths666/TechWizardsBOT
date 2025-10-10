@@ -16,4 +16,6 @@ from db.psql.models.models import User
 
 class NewUser(BaseFilter):
     async def __call__(self, message: Message) -> bool:
-        return True  # временно: все проходят как новые
+        # Проверяем, есть ли пользователь в MongoDB
+        user = await User.check(tg_id=message.from_user.id)
+        return not bool(user)

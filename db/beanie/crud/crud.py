@@ -11,3 +11,4 @@ async def init_mongo():
         database=client[cnf.mongo.NAME],
         document_models=document_models
     )
+

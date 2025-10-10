@@ -2,7 +2,7 @@ from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from config import cnf
+from config import cnf, BotConfig
 
 bot = Bot(
     token=cnf.bot.TOKEN,
@@ -10,4 +10,4 @@ bot = Bot(
         parse_mode=ParseMode.HTML
     )
 )
-
+bot_config = BotConfig()

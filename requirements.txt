@@ -18,3 +18,4 @@ pydantic-settings~=2.4.0
 # Another
 pydantic~=2.7.4
 aiohttp~=3.11.12
+aiomysql==0.2.0

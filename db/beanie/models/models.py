@@ -72,10 +72,42 @@ class ModelAdmin(Document):
         return await cls.find_all().to_list()
 
 
+
 class User(ModelAdmin):
     tg_id: int
-    full_name: Optional[str] = None
-    created_at: Optional[datetime] = None
+    username: Optional[str] = None
+    role: str = "user"
+    created_at: datetime = datetime.utcnow()
 
     class Settings:
         name = "users"
+
+class Claim(ModelAdmin):
+    claim_id: str                   # "000001"
+    user_id: int                    # tg_id
+    code: str
+    code_status: str                # "valid" / "invalid"
+    process_status: str             # "process" / "complete" / "cancelled"
+    claim_status: str               # "confirm" / "cancelled"
+    payment_method: str             # "phone" / "card"
+    phone: Optional[str] = None
+    card: Optional[str] = None
+    bank: Optional[str] = None
+    review_text: str = ""
+    photo_file_ids: list[str] = []
+    created_at: datetime = datetime.utcnow()
+    updated_at: datetime = datetime.utcnow()
+
+    class Settings:
+        name = "claims"
+
+    @classmethod
+    async def generate_next_claim_id(cls) -> str:
+        """
+        Генерирует следующий номер заявки в формате 000001, 000002, ...
+        """
+        last_claim = await cls.find_all().sort("-claim_id").limit(1).to_list()
+        if last_claim:
+            last_num = int(last_claim[0].claim_id)
+            return f"{last_num + 1:06d}"
+        return "000001"

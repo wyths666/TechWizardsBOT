@@ -7,27 +7,31 @@ from bot.templates.admin import menu as tadmin
 from bot.templates.user import reg as treg
 from bot.templates.user import menu as tmenu
 from bot.filters.user import NewUser
-from core.bot import bot
+from core.bot import bot, bot_config
+from db.beanie.models import User, Claim
+from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
 from asyncio import Lock
 
 router = Router()
 user_locks = {}
-CLAIM_COUNTER = 1 # временно оформляем номер заявки
-
-
-# Заглушка: валидные коды (в реальном проекте — из БД)
-VALID_CODES = {"ABC123", "XYZ789"}
-
-# @router.message(Command("start"))
-# async def menu(msg: types.Message, state: FSMContext):
-#     """ /start для вызова меню (для уже зарегистрированных) """
-#     await msg.answer(text=tmenu.menu_text, reply_markup=tmenu.menu_ikb())
-#     await msg.delete()
 
 
 @router.message(Command("start"), NewUser())
 async def start_new_user(msg: Message, state: FSMContext):
+    user_id = msg.from_user.id
+    username = msg.from_user.username
+
+    # Определяем роль на основе BOT_ADMINS из .env
+    role = "admin" if user_id in bot_config.ADMINS else "user"
+
+    # Создаём пользователя в MongoDB
+    await User.create(
+        tg_id=user_id,
+        username=username,
+        role=role
+    )
+
     await msg.answer(text=treg.start_text)
     await state.set_state(treg.RegState.waiting_for_code)
     await msg.delete()
@@ -37,17 +41,12 @@ async def start_new_user(msg: Message, state: FSMContext):
 async def process_code(msg: Message, state: FSMContext):
     code = msg.text.strip().upper()
 
-    if code not in VALID_CODES:
+    code_valid = await get_and_delete_code(code)
+    if not code_valid:
         await msg.answer(text=treg.code_not_found_text, reply_markup=tmenu.support_ikb())
         return
 
-
-    # === Сначала показываем сообщение о выигрыше ===
-    await msg.answer(text=treg.code_found_text)
-    await state.update_data(entered_code=code)
-
-    # === Затем проверяем подписку ===
-    CHANNEL_USERNAME = "@tech_repost"
+    CHANNEL_USERNAME = "@zdorovkakslon"
     is_subscribed = await check_user_subscription(bot, msg.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
@@ -55,16 +54,15 @@ async def process_code(msg: Message, state: FSMContext):
             text=treg.not_subscribed_text,
             reply_markup=tmenu.check_subscription_ikb()
         )
+        # Сохраняем код для последующей проверки
+        await state.update_data(entered_code=code)
         return
 
-    # === Если подписан — просим отзыв ===
-    await msg.answer(text=treg.review_request_text, reply_markup=tmenu.send_screenshot_ikb())
-    await state.set_state(treg.RegState.waiting_for_screenshot)
-
+    # Успешно — идём к отзыву
+    await proceed_to_review(msg, state, code)
 
 @router.callback_query(treg.RegCallback.filter(F.step == "check_sub"))
 async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
-    # Получаем текущий код из состояния
     data = await state.get_data()
     code = data.get("entered_code")
 
@@ -73,23 +71,39 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
         await call.message.delete()
         return
 
-    # Проверяем подписку
-    CHANNEL_USERNAME = "@tech_repost"
+    CHANNEL_USERNAME = "@zdorovkakslon"
     is_subscribed = await check_user_subscription(bot, call.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
         await call.answer("Вы всё ещё не подписаны. Попробуйте снова.", show_alert=True)
         return
 
-    # Если подписан — удаляем сообщение с кнопкой и идём дальше
+    # Успешно — идём к отзыву
     await call.message.delete()
+    await proceed_to_review(call.message, state, code)
+    await call.answer()
 
-    await call.message.answer(
+
+async def proceed_to_review(msg: Message, state: FSMContext, code: str):
+    """Переход к отзыву после успешной проверки кода и подписки"""
+    # Генерируем claim_id и создаём заявку
+    claim_id = await Claim.generate_next_claim_id()
+    await Claim.create(
+        claim_id=claim_id,
+        user_id=msg.from_user.id,
+        code=code,
+        code_status="valid",
+        process_status="process",
+        claim_status="pending",
+        payment_method="unknown"
+    )
+    await state.update_data(claim_id=claim_id, entered_code=code)
+
+    await msg.answer(
         text=treg.review_request_text,
         reply_markup=tmenu.send_screenshot_ikb()
     )
     await state.set_state(treg.RegState.waiting_for_screenshot)
-    await call.answer()
 
 
 @router.callback_query(treg.RegCallback.filter())
@@ -204,32 +218,27 @@ async def process_bank(msg: Message, state: FSMContext):
 
 async def finalize_claim(msg: Message, state: FSMContext):
     """Завершает заявку и отправляет её менеджеру"""
-    global CLAIM_COUNTER
-
     data = await state.get_data()
-    code = data.get("entered_code")
+    claim_id = data.get("claim_id")  # ← берём из состояния
 
-    if code in VALID_CODES:
-        VALID_CODES.remove(code)
-
-    claim_number = f"{CLAIM_COUNTER:06d}"
-    CLAIM_COUNTER += 1
+    if not claim_id:
+        # На всякий случай — но не должно происходить
+        await msg.answer("Ошибка: заявка не найдена.")
+        return
 
     phone = data.get('phone')
     card = data.get('card')
-    bank = data.get('bank', '')  # может быть пустым
+    bank = data.get('bank', '')
 
     if phone:
-        # Телефон → банк должен быть (уже введён)
         payment_info = f"Номер телефона: {phone}"
         bank_info = f"Банк: {bank}\n"
     else:
-        # Карта → банк не нужен
         payment_info = f"Номер карты: {card}"
         bank_info = ""
 
     claim_text = (
-        f"Номер заявки: {claim_number}\n"
+        f"Номер заявки: {claim_id}\n"
         f"Текст: {data.get('review_text', '—')}\n"
         f"{bank_info}"
         f"{payment_info}\n"
@@ -240,7 +249,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     sent_claim = await bot.send_message(
         chat_id=MANAGER_GROUP_ID,
         text=claim_text,
-        reply_markup=tadmin.claim_action_ikb(claim_number)
+        reply_markup=tadmin.claim_action_ikb(claim_id)
     )
 
     # Отправка фото
@@ -255,6 +264,20 @@ async def finalize_claim(msg: Message, state: FSMContext):
             except:
                 for fid in photo_ids:
                     await bot.send_photo(chat_id=MANAGER_GROUP_ID, photo=fid)
+
+    # === Обновляем заявку в MongoDB ===
+    claim = await Claim.get(claim_id=claim_id)
+    if claim:
+        await claim.update(
+            process_status="complete",
+            claim_status="confirm",
+            payment_method="phone" if phone else "card",
+            phone=phone,
+            card=card,
+            bank=bank if phone else None,
+            review_text=data.get('review_text', ''),
+            photo_file_ids=photo_ids
+        )
 
     await msg.answer(text=treg.success_text)
     await state.clear()
