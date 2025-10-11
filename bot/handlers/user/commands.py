@@ -1,14 +1,17 @@
 from aiogram import Router, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ForceReply
 import re
+
+from bot.handlers.admin.commands import pending_actions, send_message_to_user
 from bot.templates.admin import menu as tadmin
+from bot.templates.admin.menu import admin_reply_ikb
 from bot.templates.user import reg as treg
 from bot.templates.user import menu as tmenu
-from bot.filters.user import NewUser
+from bot.templates.user.menu import user_reply_ikb
 from core.bot import bot, bot_config
-from db.beanie.models import User, Claim
+from db.beanie.models import User, Claim, AdminMessage
 from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
 from asyncio import Lock
@@ -17,37 +20,45 @@ router = Router()
 user_locks = {}
 
 
-@router.message(Command("start"), NewUser())
-async def start_new_user(msg: Message, state: FSMContext):
+@router.message(Command("start"))
+async def start_handler(msg: Message, state: FSMContext):
     user_id = msg.from_user.id
     username = msg.from_user.username
 
-    # Определяем роль на основе BOT_ADMINS из .env
-    role = "admin" if user_id in bot_config.ADMINS else "user"
+    # Проверяем, новый ли пользователь
+    existing_user = await User.get(tg_id=user_id)
 
-    # Создаём пользователя в MongoDB
-    await User.create(
-        tg_id=user_id,
-        username=username,
-        role=role
-    )
+    if not existing_user:
+        # НОВЫЙ пользователь
+        role = "admin" if user_id in bot_config.ADMINS else "user"
 
-    await msg.answer(text=treg.start_text)
+        await User.create(
+            tg_id=user_id,
+            username=username,
+            role=role
+        )
+
+        # Приветственное сообщение
+        await msg.answer(
+            text="Добро пожаловать в мир уникальных картин на металле и персонализированных украшений! Здесь каждая деталь - это эмоция, а каждый предмет - история, которую можно потрогать.",
+            reply_markup=tmenu.welcome_ikb()
+        )
+        await msg.delete()
+
+    else:
+        # СУЩЕСТВУЮЩИЙ пользователь
+        await state.clear()
+        await msg.answer(text=treg.start_text)
+        await state.set_state(treg.RegState.waiting_for_code)
+        await msg.delete()
+
+
+@router.callback_query(F.data == "get_gift")
+async def handle_get_gift(call: CallbackQuery, state: FSMContext):
+    """Обработка кнопки 'Получить подарок' для новых пользователей"""
+    await call.message.edit_text(text=treg.start_text)
     await state.set_state(treg.RegState.waiting_for_code)
-    await msg.delete()
-
-
-
-@router.message(Command("start"))
-async def start_for_registered(msg: types.Message, state: FSMContext):
-    """
-    /start для уже зарегистрированных пользователей.
-    Предлагает ввести новый секретный код.
-    """
-    await state.clear()  # сбрасываем любое предыдущее состояние
-    await msg.answer(text=treg.start_text)
-    await state.set_state(treg.RegState.waiting_for_code)
-    await msg.delete()
+    await call.answer()
 
 
 
@@ -251,7 +262,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     # === Формируем текст заявки ===
     if phone:
         payment_info = f"Номер телефона: {phone}"
-        bank_info = f"Банк: {bank}\n"
+        bank_info = f"Банк: {bank}\n" if bank else ""
     else:
         payment_info = f"Номер карты: {card}"
         bank_info = ""
@@ -260,66 +271,171 @@ async def finalize_claim(msg: Message, state: FSMContext):
         f"Номер заявки: {claim_id}\n"
         f"Текст: {review_text}\n"
         f"{bank_info}"
-        f"{payment_info}\n"
-        f"Скриншоты:"
+        f"{payment_info}"
     )
 
     # === Отправка в группу ===
     MANAGER_GROUP_ID = -4945969550
 
-
-
-
-    # === Отправка фото ===
+    # === Отправка фото и текста ===
     if photo_ids:
         if len(photo_ids) == 1:
-            await bot.send_photo(chat_id=MANAGER_GROUP_ID, photo=photo_ids[0])
-            await bot.send_message(
+            # ✅ ОДНО ФОТО: отправляем фото с подписью и кнопками
+            await bot.send_photo(
                 chat_id=MANAGER_GROUP_ID,
-                text=claim_text,
+                photo=photo_ids[0],
+                caption=f"{claim_text}\n\n📸 Скриншот к заявке №{claim_id}",
                 reply_markup=tadmin.claim_action_ikb(claim_id)
             )
         else:
-            media_group = [types.InputMediaPhoto(media=fid) for fid in photo_ids]
+            # ✅ НЕСКОЛЬКО ФОТО: создаем медиагруппу правильно
+            media_group = []
+            for i, fid in enumerate(photo_ids):
+                if i == 0:  # Только у первого фото может быть подпись
+                    media_group.append(types.InputMediaPhoto(
+                        media=fid,
+                        caption=f"{claim_text}\n\n📸 Скриншоты по заявке №{claim_id} ({len(photo_ids)} фото)"
+                    ))
+                else:
+                    media_group.append(types.InputMediaPhoto(media=fid))
+
             try:
                 await bot.send_media_group(chat_id=MANAGER_GROUP_ID, media=media_group)
+                # ✅ Отправляем кнопки отдельно после медиагруппы
                 await bot.send_message(
                     chat_id=MANAGER_GROUP_ID,
-                    text=claim_text,
+                    text=f"Действия по заявке №{claim_id}:",
                     reply_markup=tadmin.claim_action_ikb(claim_id)
                 )
             except Exception as e:
                 print(f"Ошибка отправки медиагруппы: {e}")
-                for fid in photo_ids:
-                    await bot.send_photo(chat_id=MANAGER_GROUP_ID, photo=fid
+                # Fallback: отправляем по одному
+                for i, fid in enumerate(photo_ids):
+                    caption = f"{claim_text}\n\n📸 Скриншот {i + 1}/{len(photo_ids)}" if i == 0 else None
+                    await bot.send_photo(
+                        chat_id=MANAGER_GROUP_ID,
+                        photo=fid,
+                        caption=caption
+                    )
+                await bot.send_message(
+                    chat_id=MANAGER_GROUP_ID,
+                    text=f"Действия по заявке №{claim_id}:",
+                    reply_markup=tadmin.claim_action_ikb(claim_id)
+                )
+    else:
+        # ✅ ЕСЛИ ФОТО НЕТ: отправляем только текст
+        await bot.send_message(
+            chat_id=MANAGER_GROUP_ID,
+            text=claim_text,
+            reply_markup=tadmin.claim_action_ikb(claim_id)
+        )
+
+    # === Подготавливаем данные для обновления ===
+    update_data = {
+        "process_status": "complete",
+        "claim_status": "confirm",
+        "payment_method": "phone" if phone else "card",
+        "review_text": review_text,
+        "photo_file_ids": photo_ids
+    }
+
+    # Добавляем данные в зависимости от выбранного способа оплаты
+    if phone:  # Если выбран телефон
+        update_data["phone"] = phone
+        update_data["bank"] = bank
+        update_data["card"] = None
+    elif card:  # Если выбрана карта
+        update_data["card"] = card
+        update_data["phone"] = None
+        update_data["bank"] = None
+
+    # === Обновляем заявку ===
+    for field, value in update_data.items():
+        setattr(claim, field, value)
+    await claim.replace()
+
+    # === Завершение ===
+    await msg.answer(text=treg.success_text)
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("reply_"))
+async def reply_to_admin(call: CallbackQuery):
+    claim_id = call.data.replace("reply_", "")
+
+    claim = await Claim.get(claim_id=claim_id)
+    if not claim:
+        await call.answer("Заявка не найдена", show_alert=True)
+        return
+
+    # Сохраняем действие ответа
+    pending_actions[call.from_user.id] = {
+        "type": "user_reply",
+        "claim_id": claim_id
+    }
+
+    await call.message.answer(
+        "💬 Введите ваш ответ администратору:",
+        reply_markup=ForceReply(input_field_placeholder="Ваш ответ...")
     )
+    await call.answer()
 
-        # === Подготавливаем данные для обновления ===
-        update_data = {
-            "process_status": "complete",
-            "claim_status": "confirm",
-            "payment_method": "phone" if phone else "card",
-            "review_text": review_text,
-            "photo_file_ids": photo_ids
-        }
 
-        # Добавляем данные в зависимости от выбранного способа оплаты
-        if phone:  # Если выбран телефон
-            update_data["phone"] = phone
-            update_data["bank"] = bank  # ✅ Сохраняем банк ВСЕГДА для телефона
-            update_data["card"] = None  # ✅ Явно сбрасываем карту
-        elif card:  # Если выбрана карта
-            update_data["card"] = card
-            update_data["phone"] = None  # ✅ Явно сбрасываем телефон
-            update_data["bank"] = None  # ✅ Явно сбрасываем банк
 
-        # === Обновляем заявку ===
-        # Фильтруем None значения перед обновлением (опционально)
-        filtered_update_data = {k: v for k, v in update_data.items() if v is not None}
-        for field, value in filtered_update_data.items():
-            setattr(claim, field, value)
-        await claim.replace()
 
-        # === Завершение ===
-        await msg.answer(text=treg.success_text)
-        await state.clear()
+# @router.message(F.reply_to_message)
+# async def handle_force_reply(msg: Message):
+#     user_id = msg.from_user.id
+#
+#     if user_id in pending_actions:
+#         action = pending_actions[user_id]
+#
+#         if action["type"] == "message":
+#             # ✅ ПРОВЕРЯЕМ И ОБЕСПЕЧИВАЕМ ТЕКСТ
+#             message_text = msg.text or msg.caption or "Сообщение без текста"
+#
+#             await AdminMessage.create(
+#                 claim_id=action["claim_id"],
+#                 from_admin_id=user_id,
+#                 to_user_id=action["user_id"],
+#                 message_text=message_text,  # ← ГАРАНТИРУЕМ СТРОКУ
+#                 is_reply=False
+#             )
+#
+#             try:
+#                 await bot.send_message(
+#                     chat_id=action["user_id"],
+#                     text=f"📨 Сообщение от администратора по заявке {action['claim_id']}:\n\n{message_text}",
+#                     reply_markup=user_reply_ikb(action["claim_id"])
+#                 )
+#                 await msg.answer("✅ Сообщение отправлено пользователю")
+#             except Exception as e:
+#                 await msg.answer(f"❌ Ошибка отправки: {e}")
+#
+#         elif action["type"] == "user_reply":
+#             # ✅ ПРОВЕРЯЕМ И ОБЕСПЕЧИВАЕМ ТЕКСТ
+#             message_text = msg.text or msg.caption or "Сообщение без текста"
+#             claim_id = action["claim_id"]
+#
+#             await AdminMessage.create(
+#                 claim_id=claim_id,
+#                 from_admin_id=user_id,
+#                 to_user_id=user_id,
+#                 message_text=message_text,  # ← ГАРАНТИРУЕМ СТРОКУ
+#                 is_reply=True
+#             )
+#
+#             # Уведомляем админов
+#             for admin_id in bot_config.ADMINS:
+#                 try:
+#                     await bot.send_message(
+#                         chat_id=admin_id,
+#                         text=f"💬 Ответ от пользователя по заявке {claim_id}:\n\n{message_text}",
+#                         reply_markup=admin_reply_ikb(claim_id)
+#                     )
+#                 except Exception as e:
+#                     print(f"Ошибка уведомления админа {admin_id}: {e}")
+#
+#             await msg.answer("✅ Ваш ответ отправлен администратору")
+#
+#         del pending_actions[user_id]

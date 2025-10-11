@@ -14,7 +14,6 @@ from core.logger import bot_logger as logger
 from db.beanie.models import document_models
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
-
 from db.mysql.crud import init_mysql
 
 
@@ -23,6 +22,7 @@ dp = Dispatcher(
     storage=MemoryStorage()
 )
 dp.include_routers(*routers)
+
 
 
 async def startup(bot: Bot) -> None:

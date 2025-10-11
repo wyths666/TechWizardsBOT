@@ -1,7 +1,9 @@
 from typing import Optional, Union
 from beanie import Document
 from datetime import datetime
+import pytz
 
+MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 # Базовый класс для CRUD-операций
 class ModelAdmin(Document):
@@ -72,12 +74,23 @@ class ModelAdmin(Document):
         return await cls.find_all().to_list()
 
 
+class AdminMessage(ModelAdmin):
+    claim_id: str
+    from_admin_id: int
+    to_user_id: int
+    message_text: str = ""
+    is_reply: bool = False
+    created_at: datetime = datetime.now(MOSCOW_TZ)
+
+    class Settings:
+        name = "admin_messages"
+
 
 class User(ModelAdmin):
     tg_id: int
     username: Optional[str] = None
     role: str = "user"
-    created_at: datetime = datetime.utcnow()
+    created_at: datetime = datetime.now(MOSCOW_TZ)
 
     class Settings:
         name = "users"
@@ -95,8 +108,8 @@ class Claim(ModelAdmin):
     bank: Optional[str] = None
     review_text: str = ""
     photo_file_ids: list[str] = []
-    created_at: datetime = datetime.utcnow()
-    updated_at: datetime = datetime.utcnow()
+    created_at: datetime = datetime.now(MOSCOW_TZ)
+    updated_at: datetime = datetime.now(MOSCOW_TZ)
 
     class Settings:
         name = "claims"
