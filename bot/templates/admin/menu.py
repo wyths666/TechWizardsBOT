@@ -27,7 +27,7 @@ def claim_action_ikb(claim_id):
     builder.button(text="❌ Отклонить", callback_data=f"reject_{claim_id}")
     builder.button(text="💬 Написать пользователю", callback_data=f"message_{claim_id}")
     builder.button(text="👀 Просмотреть чат", callback_data=f"chat_{claim_id}")
-    builder.adjust(1)  # Все кнопки вертикально
+    builder.adjust(1)
     return builder.as_markup()
 
 def quick_messages_ikb(claim_id):
