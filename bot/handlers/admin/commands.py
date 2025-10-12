@@ -7,8 +7,9 @@ from aiogram.types import CallbackQuery, Message, ForceReply
 from bot.templates.admin import menu as tadmin
 from bot.templates.admin.menu import AdminState, quick_messages_ikb, admin_reply_ikb
 from bot.templates.user.menu import user_reply_ikb
-from db.beanie.models import Claim, AdminMessage
+from db.beanie.models import Claim, AdminMessage, KonsolPayment
 from core.bot import bot, bot_config
+from utils.konsol_client import konsol_client
 
 router = Router()
 
@@ -31,8 +32,8 @@ async def handle_claim_action(call: CallbackQuery, callback_data: tadmin.ClaimCa
         claim_status = "confirm"
         process_status = "complete"
         status_text = "Принята"
-        # Имитация оплаты
-        await fake_payment_api(claim_id)
+        # Создание платежа в konsol.pro
+        await create_konsol_payment(claim)
     else:  # "reject"
         claim_status = "cancelled"
         process_status = "cancelled"
@@ -51,10 +52,96 @@ async def handle_claim_action(call: CallbackQuery, callback_data: tadmin.ClaimCa
     await call.answer()
 
 
-async def fake_payment_api(claim_id: str):
-    """Заглушка вместо реального API Konsol.pro"""
-    print(f"[PAYMENT] Имитация оплаты по заявке {claim_id}")
-    # TODO: в будущем — вызов integrations/konsol.py
+async def create_konsol_payment(claim: Claim):
+    """Создание платежа в konsol.pro на основе заявки"""
+    try:
+        # Определяем тип платежа и соответствующие поля
+        if claim.payment_method == "card":
+            payment_type = "card_payment"
+            payment_data = {
+                "amount": claim.amount,
+                "currency": "RUB",
+                "description": f"Оплата по заявке {claim.claim_id}",
+                "payment_type": payment_type,
+                "card_number": claim.card,
+                "user_id": claim.user_id,
+                "external_id": f"claim_{claim.claim_id}"
+            }
+        elif claim.payment_method == "phone":
+            payment_type = "phone_payment"
+            payment_data = {
+                "amount": claim.amount,
+                "currency": "RUB",
+                "description": f"Оплата по заявке {claim.claim_id}",
+                "payment_type": payment_type,
+                "phone_number": claim.phone,
+                "bank": claim.bank,
+                "user_id": claim.user_id,
+                "external_id": f"claim_{claim.claim_id}"
+            }
+        else:
+            # По умолчанию карта, если метод не определен
+            payment_type = "card_payment"
+            payment_data = {
+                "amount": claim.amount,
+                "currency": "RUB",
+                "description": f"Оплата по заявке {claim.claim_id}",
+                "payment_type": payment_type,
+                "user_id": claim.user_id,
+                "external_id": f"claim_{claim.claim_id}"
+            }
+        
+        # Создаем платеж через konsol.pro API
+        result = await konsol_client.create_payment(payment_data)
+        payment_id = result.get('id')
+        payment_url = result.get('payment_url')
+        
+        # Сохраняем платеж в базу данных
+        db_payment_data = {
+            "konsol_id": payment_id,
+            "amount": payment_data["amount"],
+            "currency": payment_data["currency"],
+            "status": result.get('status', 'pending'),
+            "description": payment_data["description"],
+            "payment_type": payment_type,
+            "user_id": claim.user_id,
+            "external_id": payment_data["external_id"],
+            "payment_url": payment_url,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now()
+        }
+        
+        # Добавляем специфичные поля
+        if payment_type == "card_payment" and claim.card:
+            db_payment_data["card_number"] = claim.card
+        elif payment_type == "phone_payment":
+            if claim.phone:
+                db_payment_data["phone_number"] = claim.phone
+            if claim.bank:
+                db_payment_data["bank"] = claim.bank
+        
+        await KonsolPayment.create(**db_payment_data)
+        
+        # Отправляем уведомление пользователю
+        await send_payment_notification_to_user(claim.user_id, payment_id, payment_url, claim.amount)
+        
+        print(f"[PAYMENT] Платеж создан для заявки {claim.claim_id}: {payment_id}")
+        
+    except Exception as e:
+        print(f"[PAYMENT ERROR] Ошибка создания платежа для заявки {claim.claim_id}: {e}")
+        # Здесь можно добавить логику обработки ошибок, например, уведомить админа
+
+
+async def send_payment_notification_to_user(user_id: int, payment_id: str, payment_url: str, amount: float):
+    """Отправка уведомления пользователю о создании платежа"""
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text="Ваш выигрыш отправлен Вам на указанный банковский счет. Компания Pure желает Вам крепкого здоровья, и хорошего дня",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print(f"[NOTIFICATION ERROR] Не удалось отправить уведомление пользователю {user_id}: {e}")
 
 
 @router.callback_query(F.data.startswith("message_"))

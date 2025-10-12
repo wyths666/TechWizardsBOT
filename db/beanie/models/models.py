@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any
 from beanie import Document
 from datetime import datetime
 import pytz
@@ -103,6 +103,7 @@ class Claim(ModelAdmin):
     process_status: str             # "process" / "complete" / "cancelled"
     claim_status: str               # "confirm" / "cancelled"
     payment_method: str             # "phone" / "card"
+    amount: float = 1000.00         # Сумма платежа (по умолчанию 1000 руб)
     phone: Optional[str] = None
     card: Optional[str] = None
     bank: Optional[str] = None
@@ -124,4 +125,87 @@ class Claim(ModelAdmin):
             last_num = int(last_claim[0].claim_id)
             return f"{last_num + 1:06d}"
         return "000001"
+
+
+class KonsolPayment(ModelAdmin):
+    """Модель для платежей konsol.pro"""
+    konsol_id: str  # ID платежа в konsol.pro
+    amount: float
+    currency: str  # RUB, USD, EUR, etc.
+    status: str  # pending, processing, completed, failed, cancelled
+    description: Optional[str] = None
+    payment_type: str  # card_payment, phone_payment
+    user_id: Optional[int] = None  # tg_id пользователя
+    external_id: Optional[str] = None  # Внешний ID для связи с другими системами
+    callback_url: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None  # Дополнительные данные в JSON
+    payment_url: Optional[str] = None  # URL для оплаты
+    created_at: datetime = datetime.now(MOSCOW_TZ)
+    updated_at: datetime = datetime.now(MOSCOW_TZ)
+    paid_at: Optional[datetime] = None  # Дата оплаты
+    
+    # Поля для платежа по карте
+    card_number: Optional[str] = None  # Номер карты
+    
+    # Поля для платежа по телефону
+    phone_number: Optional[str] = None  # Номер телефона
+    bank: Optional[str] = None  # Банк
+
+    class Settings:
+        name = "konsol_payments"
+        indexes = [
+            "konsol_id",
+            "user_id",
+            "status",
+            "currency",
+            "external_id",
+            "payment_type",
+            "card_number",
+            "phone_number"
+        ]
+
+
+class KonsolInvoice(ModelAdmin):
+    """Модель для счетов konsol.pro"""
+    konsol_id: str  # ID счета в konsol.pro
+    amount: float
+    currency: str  # RUB, USD, EUR, etc.
+    status: str  # pending, processing, completed, failed, cancelled
+    description: Optional[str] = None
+    due_date: Optional[datetime] = None  # Дата оплаты счета
+    user_id: Optional[int] = None  # tg_id пользователя
+    external_id: Optional[str] = None  # Внешний ID для связи с другими системами
+    metadata: Optional[Dict[str, Any]] = None  # Дополнительные данные в JSON
+    invoice_url: Optional[str] = None  # URL для оплаты счета
+    created_at: datetime = datetime.now(MOSCOW_TZ)
+    updated_at: datetime = datetime.now(MOSCOW_TZ)
+    paid_at: Optional[datetime] = None  # Дата оплаты
+
+    class Settings:
+        name = "konsol_invoices"
+        indexes = [
+            "konsol_id",
+            "user_id",
+            "status",
+            "currency",
+            "external_id"
+        ]
+
+
+class KonsolWebhookLog(ModelAdmin):
+    """Модель для логов webhook уведомлений konsol.pro"""
+    event: str  # Тип события
+    data: Dict[str, Any]  # Данные события
+    signature: Optional[str] = None  # Подпись для проверки
+    processed: bool = False  # Обработано ли событие
+    error_message: Optional[str] = None  # Сообщение об ошибке при обработке
+    created_at: datetime = datetime.now(MOSCOW_TZ)
+
+    class Settings:
+        name = "konsol_webhook_logs"
+        indexes = [
+            "event",
+            "processed",
+            "created_at"
+        ]
 

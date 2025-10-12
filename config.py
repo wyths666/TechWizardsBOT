@@ -115,6 +115,17 @@ class MysqlConfig(BaseSettings):
         env_file = '.env'
         extra = 'ignore'
 
+class KonsolConfig(BaseSettings):
+    API_TOKEN: str
+    BASE_URL: str = "https://swagger-payments.konsol.pro"
+    TIMEOUT: int = 30
+
+    class Config:
+        env_prefix = 'KONSOL_'
+        env_file = '.env'
+        extra = 'ignore'
+
+
 class Config:
     psql = PostgresConfig()
     redis = RedisConfig()
@@ -123,6 +134,7 @@ class Config:
     bot = BotConfig()
     proj = ProjConfig()
     mysql = MysqlConfig()
+    konsol = KonsolConfig()
 
 
 cnf = Config()

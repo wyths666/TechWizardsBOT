@@ -1,4 +1,3 @@
-from .models import User, AdminMessage
-from .models import Claim
+from .models import User, AdminMessage, Claim, KonsolPayment, KonsolInvoice, KonsolWebhookLog
 
-document_models = [User, Claim, AdminMessage]
+document_models = [User, Claim, AdminMessage, KonsolPayment, KonsolInvoice, KonsolWebhookLog]
