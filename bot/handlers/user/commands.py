@@ -74,7 +74,7 @@ async def process_code(msg: Message, state: FSMContext):
     # Отправляем сообщение о выигрыше
     await msg.answer(text=treg.code_found_text)
 
-    CHANNEL_USERNAME = "@tech_repost"
+    CHANNEL_USERNAME = "@zdorovkakslon"
     is_subscribed = await check_user_subscription(bot, msg.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
@@ -98,7 +98,7 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
         await call.message.delete()
         return
 
-    CHANNEL_USERNAME = "@tech_repost"
+    CHANNEL_USERNAME = "@zdorovkakslon"
     is_subscribed = await check_user_subscription(bot, call.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
@@ -275,7 +275,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     )
 
     # === Отправка в группу ===
-    MANAGER_GROUP_ID = -4945969550
+    MANAGER_GROUP_ID = -4916537553
 
     # === Отправка фото и текста ===
     if photo_ids:
