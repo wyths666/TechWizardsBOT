@@ -100,10 +100,10 @@ class Claim(ModelAdmin):
     user_id: int                    # tg_id
     code: str
     code_status: str                # "valid" / "invalid"
-    process_status: str             # "process" / "complete" / "cancelled"
-    claim_status: str               # "confirm" / "cancelled"
+    process_status: str = "process"            # "process" / "complete" / "cancelled"
+    claim_status: str = "process"             # "confirm" / "cancelled"
     payment_method: str             # "phone" / "card"
-    amount: float = 1000.00         # Сумма платежа (по умолчанию 1000 руб)
+    amount: float = 100.00         # Сумма платежа (по умолчанию 100 руб)
     phone: Optional[str] = None
     card: Optional[str] = None
     bank: Optional[str] = None
@@ -114,6 +114,13 @@ class Claim(ModelAdmin):
 
     class Settings:
         name = "claims"
+        use_state_management = True
+
+    def update_status(self, claim_status: str, process_status: str):
+        """Метод для обновления статусов"""
+        self.claim_status = claim_status
+        self.process_status = process_status
+        self.updated_at = datetime.now()
 
     @classmethod
     async def generate_next_claim_id(cls) -> str:

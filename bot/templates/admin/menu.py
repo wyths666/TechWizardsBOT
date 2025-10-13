@@ -9,8 +9,8 @@ class AdminMenuCallback(CallbackData, prefix='admin_menu'):
 
 
 class ClaimCallback(CallbackData, prefix="claim"):
-    action: str  # "accept", "reject"
-    claim_id: str  # номер заявки, например "000001"
+    claim_id: str
+    action: str  # "accept", "reject", "message"
 
 
 class AdminState(StatesGroup):

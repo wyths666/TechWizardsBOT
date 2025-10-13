@@ -9,6 +9,7 @@ from bot.templates.admin.menu import AdminState, quick_messages_ikb, admin_reply
 from bot.templates.user.menu import user_reply_ikb
 from db.beanie.models import Claim, AdminMessage, KonsolPayment
 from core.bot import bot, bot_config
+from db.beanie.models.models import MOSCOW_TZ
 from utils.konsol_client import konsol_client
 
 router = Router()
@@ -16,41 +17,191 @@ router = Router()
 pending_actions = {}  # {user_id: {"type": "message", "claim_id": "000001", "data": {...}}}
 pending_replies = {}  # Для ForceReply
 
-@router.callback_query(tadmin.ClaimCallback.filter())
-async def handle_claim_action(call: CallbackQuery, callback_data: tadmin.ClaimCallback):
-    claim_id = callback_data.claim_id
-    action = callback_data.action
+# @router.callback_query(F.data.startswith("claim:"))
+# async def handle_claim_action(call: CallbackQuery, callback_data: tadmin.ClaimCallback):
+#     print(f"🔧 Обработка ClaimCallback: claim_id={callback_data.claim_id}, action={callback_data.action}")
+#
+#     claim_id = callback_data.claim_id
+#     action = callback_data.action
+#
+#     # === Находим заявку в MongoDB ===
+#     claim = await Claim.find_one(Claim.claim_id == claim_id)
+#     if not claim:
+#         print(f"❌ Заявка {claim_id} не найдена")
+#         await call.answer("Заявка не найдена в базе.", show_alert=True)
+#         return
+#
+#     print(f"🔍 Найдена заявка: {claim.claim_id}")
+#     print(f"📊 Текущий статус: claim_status={claim.claim_status}, process_status={claim.process_status}")
+#
+#     # === Обработка разных действий ===
+#     if action in ["accept", "reject"]:
+#         # === Определяем статусы ===
+#         if action == "accept":
+#             claim_status = "confirm"
+#             process_status = "complete"
+#             status_text = "Принята"
+#             print(f"✅ Устанавливаем статусы: claim_status={claim_status}, process_status={process_status}")
+#
+#             # Имитация оплаты
+#             await create_konsol_payment(claim)
+#         else:  # "reject"
+#             claim_status = "cancelled"
+#             process_status = "cancelled"
+#             status_text = "Отклонена"
+#             print(f"❌ Устанавливаем статусы: claim_status={claim_status}, process_status={process_status}")
+#
+#         # === ПРАВИЛЬНОЕ обновление в Beanie ===
+#         try:
+#             claim.claim_status = claim_status
+#             claim.process_status = process_status
+#             await claim.save()  # ← сохраняем изменения
+#
+#             print(f"💾 Статусы сохранены в БД")
+#
+#             # Проверяем, что сохранилось
+#             updated_claim = await Claim.find_one(Claim.claim_id == claim_id)
+#             print(
+#                 f"🔍 Проверка после сохранения: claim_status={updated_claim.claim_status}, process_status={updated_claim.process_status}")
+#
+#         except Exception as e:
+#             print(f"❌ Ошибка сохранения: {e}")
+#             await call.answer("Ошибка сохранения статуса", show_alert=True)
+#             return
+#
+#         # === Обновляем сообщение в группе ===
+#         try:
+#             new_text = f"{call.message.text}\n\nСтатус: {status_text}"
+#             await call.message.edit_text(text=new_text)
+#             print(f"✏️ Сообщение обновлено в чате")
+#         except Exception as e:
+#             print(f"⚠️ Не удалось обновить сообщение: {e}")
+#
+#         await call.answer(f"Заявка {status_text.lower()}")
+#
+#     elif action == "message":
+#         # Обработка сообщения
+#         print(f"💬 Обработка действия 'message'")
+#         await start_message_to_user(call)
+#     else:
+#         print(f"⚠️ Неизвестное действие: {action}")
+#         await call.answer("Неизвестное действие", show_alert=True)
 
-    # === Находим заявку в MongoDB ===
-    claim = await Claim.get(claim_id=claim_id)
-    if not claim:
-        await call.answer("Заявка не найдена в базе.", show_alert=True)
-        return
+@router.callback_query(F.data.startswith("confirm_"))
+async def handle_confirm_action(call: CallbackQuery):
+    """Обработка кнопки '✅ Подтвердить оплату'"""
+    claim_id = call.data.replace("confirm_", "")
+    print(f"✅ Подтверждение оплаты для заявки: {claim_id}")
 
-    # === Определяем статусы ===
-    if action == "accept":
-        claim_status = "confirm"
-        process_status = "complete"
-        status_text = "Принята"
-        # Создание платежа в konsol.pro
+    await process_claim_approval(call, claim_id)
+
+
+@router.callback_query(F.data.startswith("reject_"))
+async def handle_reject_action(call: CallbackQuery):
+    """Обработка кнопки '❌ Отклонить'"""
+    claim_id = call.data.replace("reject_", "")
+    print(f"❌ Отклонение заявки: {claim_id}")
+
+    await process_claim_rejection(call, claim_id)
+
+
+async def process_claim_approval(call: CallbackQuery, claim_id: str):
+    """Обработка подтверждения заявки"""
+    try:
+        # Находим заявку
+        claim = await Claim.find_one(Claim.claim_id == claim_id)
+        if not claim:
+            await call.answer("Заявка не найдена", show_alert=True)
+            return
+
+        print(f"🔍 Найдена заявка: {claim.claim_id}, текущий статус: {claim.claim_status}")
+
+        # Обновляем статус заявки
+        await claim.update(
+            claim_status="confirm",
+            process_status="complete",
+            updated_at=datetime.utcnow()
+        )
+
+        # Создаем выплату
         await create_konsol_payment(claim)
-    else:  # "reject"
-        claim_status = "cancelled"
-        process_status = "cancelled"
-        status_text = "Отклонена"
 
-    # === Обновляем заявку в MongoDB ===
-    await claim.update(
-        claim_status=claim_status,
-        process_status=process_status
-    )
+        # ОБНОВЛЯЕМ ПОДПИСЬ К ФОТО (если сообщение содержит медиа)
+        if call.message.photo:
+            # Если сообщение с фото - используем edit_caption
+            current_caption = call.message.caption or ""
+            new_caption = f"{current_caption}\n\n✅ Статус: Оплата подтверждена"
 
-    # === Обновляем сообщение в группе ===
-    new_text = f"{call.message.text}\n\nСтатус: {status_text}"
-    await call.message.edit_text(text=new_text)
+            await call.message.edit_caption(
+                caption=new_caption,
+                reply_markup=None  # Убираем кнопки после подтверждения
+            )
+        else:
+            # Если обычное текстовое сообщение - используем edit_text
+            current_text = call.message.text or ""
+            new_text = f"{current_text}\n\n✅ Статус: Оплата подтверждена"
 
-    await call.answer()
+            await call.message.edit_text(
+                text=new_text,
+                reply_markup=None  # Убираем кнопки после подтверждения
+            )
 
+        print(f"✏️ Сообщение обновлено")
+
+        await call.answer("✅ Оплата подтверждена")
+
+    except Exception as e:
+        print(f"❌ Ошибка подтверждения заявки: {e}")
+        import traceback
+        traceback.print_exc()
+        await call.answer("Ошибка подтверждения", show_alert=True)
+
+
+async def process_claim_rejection(call: CallbackQuery, claim_id: str):
+    """Обработка отклонения заявки"""
+    try:
+        # Находим заявку
+        claim = await Claim.find_one(Claim.claim_id == claim_id)
+        if not claim:
+            await call.answer("Заявка не найдена", show_alert=True)
+            return
+
+        # Обновляем статус заявки
+        await claim.update(
+            claim_status="cancelled",
+            process_status="cancelled",
+            updated_at=datetime.utcnow()
+        )
+
+        # ОБНОВЛЯЕМ ПОДПИСЬ К ФОТО (если сообщение содержит медиа)
+        if call.message.photo:
+            # Если сообщение с фото - используем edit_caption
+            current_caption = call.message.caption or ""
+            new_caption = f"{current_caption}\n\n❌ Статус: Заявка отклонена"
+
+            await call.message.edit_caption(
+                caption=new_caption,
+                reply_markup=None  # Убираем кнопки после отклонения
+            )
+        else:
+            # Если обычное текстовое сообщение - используем edit_text
+            current_text = call.message.text or ""
+            new_text = f"{current_text}\n\n❌ Статус: Заявка отклонена"
+
+            await call.message.edit_text(
+                text=new_text,
+                reply_markup=None  # Убираем кнопки после отклонения
+            )
+
+        print(f"✏️ Сообщение обновлено")
+
+        await call.answer("❌ Заявка отклонена")
+
+    except Exception as e:
+        print(f"❌ Ошибка отклонения заявки: {e}")
+        import traceback
+        traceback.print_exc()
+        await call.answer("Ошибка отклонения", show_alert=True)
 
 async def create_konsol_payment(claim: Claim):
     """Создание платежа в konsol.pro на основе заявки"""
@@ -90,46 +241,49 @@ async def create_konsol_payment(claim: Claim):
                 "user_id": claim.user_id,
                 "external_id": f"claim_{claim.claim_id}"
             }
-        
+
         # Создаем платеж через konsol.pro API
         result = await konsol_client.create_payment(payment_data)
-        payment_id = result.get('id')
-        payment_url = result.get('payment_url')
-        
-        # Сохраняем платеж в базу данных
-        db_payment_data = {
-            "konsol_id": payment_id,
-            "amount": payment_data["amount"],
-            "currency": payment_data["currency"],
-            "status": result.get('status', 'pending'),
-            "description": payment_data["description"],
-            "payment_type": payment_type,
-            "user_id": claim.user_id,
-            "external_id": payment_data["external_id"],
-            "payment_url": payment_url,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now()
-        }
-        
-        # Добавляем специфичные поля
-        if payment_type == "card_payment" and claim.card:
-            db_payment_data["card_number"] = claim.card
-        elif payment_type == "phone_payment":
-            if claim.phone:
-                db_payment_data["phone_number"] = claim.phone
-            if claim.bank:
-                db_payment_data["bank"] = claim.bank
-        
-        await KonsolPayment.create(**db_payment_data)
-        
-        # Отправляем уведомление пользователю
-        await send_payment_notification_to_user(claim.user_id, payment_id, payment_url, claim.amount)
-        
-        print(f"[PAYMENT] Платеж создан для заявки {claim.claim_id}: {payment_id}")
-        
+
+        if result and 'id' in result:
+            payment_id = result.get('id')
+            payment_url = result.get('payment_url')
+
+            # Сохраняем платеж в базу данных
+            db_payment_data = {
+                "konsol_id": payment_id,
+                "amount": payment_data["amount"],
+                "currency": payment_data["currency"],
+                "status": result.get('status', 'pending'),
+                "description": payment_data["description"],
+                "payment_type": payment_type,
+                "user_id": claim.user_id,
+                "external_id": payment_data["external_id"],
+                "payment_url": payment_url,
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            }
+
+            # Добавляем специфичные поля
+            if payment_type == "card_payment" and claim.card:
+                db_payment_data["card_number"] = claim.card
+            elif payment_type == "phone_payment":
+                if claim.phone:
+                    db_payment_data["phone_number"] = claim.phone
+                if claim.bank:
+                    db_payment_data["bank"] = claim.bank
+
+            await KonsolPayment.create(**db_payment_data)
+
+            # Отправляем уведомление пользователю
+            await send_payment_notification_to_user(claim.user_id, payment_id, payment_url, claim.amount)
+
+            print(f"[PAYMENT] Платеж создан для заявки {claim.claim_id}: {payment_id}")
+        else:
+            print(f"[PAYMENT ERROR] Не удалось создать платеж для заявки {claim.claim_id}: {result}")
+
     except Exception as e:
         print(f"[PAYMENT ERROR] Ошибка создания платежа для заявки {claim.claim_id}: {e}")
-        # Здесь можно добавить логику обработки ошибок, например, уведомить админа
 
 
 async def send_payment_notification_to_user(user_id: int, payment_id: str, payment_url: str, amount: float):

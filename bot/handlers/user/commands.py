@@ -333,7 +333,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     # === Подготавливаем данные для обновления ===
     update_data = {
         "process_status": "complete",
-        "claim_status": "confirm",
+        "claim_status": "process",
         "payment_method": "phone" if phone else "card",
         "review_text": review_text,
         "photo_file_ids": photo_ids
