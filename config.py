@@ -116,7 +116,7 @@ class MysqlConfig(BaseSettings):
         extra = 'ignore'
 
 class KonsolConfig(BaseSettings):
-    API_TOKEN: str
+    TOKEN: str
     BASE_URL: str = "https://swagger-payments.konsol.pro"
     TIMEOUT: int = 30
 
