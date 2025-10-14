@@ -16,41 +16,56 @@ from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
 from asyncio import Lock
 
+from utils.konsol_client import konsol_client
+
 router = Router()
 user_locks = {}
 
 
 @router.message(Command("start"))
-async def start_handler(msg: Message, state: FSMContext):
+async def start_new_user(msg: Message, state: FSMContext):
     user_id = msg.from_user.id
     username = msg.from_user.username
 
-    # Проверяем, новый ли пользователь
-    existing_user = await User.get(tg_id=user_id)
+    # === Находим или создаём пользователя ===
+    user = await User.get(tg_id=user_id)
 
-    if not existing_user:
-        # НОВЫЙ пользователь
+    if not user:
+        # === Создаём нового пользователя ===
         role = "admin" if user_id in bot_config.ADMINS else "user"
-
-        await User.create(
+        user = await User.create(
             tg_id=user_id,
             username=username,
             role=role
         )
 
-        # Приветственное сообщение
-        await msg.answer(
-            text="Добро пожаловать в мир уникальных картин на металле и персонализированных украшений! Здесь каждая деталь - это эмоция, а каждый предмет - история, которую можно потрогать.",
-            reply_markup=tmenu.welcome_ikb()
-        )
-        await msg.delete()
+        # === Создаём контрактора в Konsol API ===
+        contractor_data = {
+            "kind": "individual",  # по ТЗ работаем только с физлицами
+            # "taxpayer_id": "..."  # не обязателен для физлиц
+        }
 
-    else:
-        # СУЩЕСТВУЮЩИЙ пользователь
-        await state.clear()
-        await msg.answer(text=treg.start_text)
-        await state.set_state(treg.RegState.waiting_for_code)
-        await msg.delete()
+        try:
+            contractor_result = await konsol_client.create_contractor(contractor_data)
+            contractor_id = contractor_result["id"]
+
+            # === Сохраняем contractor_id в User ===
+            await user.update(contractor_id=contractor_id)
+
+            print(f"[CONTRACTOR] Контрактор создан для {user_id}: {contractor_id}")
+
+        except Exception as e:
+            print(f"[CONTRACTOR ERROR] Не удалось создать контрактор для {user_id}: {e}")
+            # Опционально: отправить админу уведомление
+            # await bot.send_message(админ_id, f"Ошибка создания контрактора для {user_id}")
+
+    # === Теперь пользователь точно есть в БД ===
+    # Показываем приветствие и кнопку "Запустить"
+    await msg.answer(
+        text=treg.welcome_text,
+        reply_markup=treg.welcome_ikb()
+    )
+    await msg.delete()
 
 
 @router.callback_query(F.data == "get_gift")
@@ -275,7 +290,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     )
 
     # === Отправка в группу ===
-    MANAGER_GROUP_ID = -4916537553
+    MANAGER_GROUP_ID = -4945969550
 
     # === Отправка фото и текста ===
     if photo_ids:

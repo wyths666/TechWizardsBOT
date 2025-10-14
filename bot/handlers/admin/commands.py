@@ -108,7 +108,6 @@ async def handle_reject_action(call: CallbackQuery):
 async def process_claim_approval(call: CallbackQuery, claim_id: str):
     """Обработка подтверждения заявки"""
     try:
-        # Находим заявку
         claim = await Claim.find_one(Claim.claim_id == claim_id)
         if not claim:
             await call.answer("Заявка не найдена", show_alert=True)
@@ -116,44 +115,31 @@ async def process_claim_approval(call: CallbackQuery, claim_id: str):
 
         print(f"🔍 Найдена заявка: {claim.claim_id}, текущий статус: {claim.claim_status}")
 
-        # Обновляем статус заявки
+        # === Обновляем статус заявки ===
         await claim.update(
             claim_status="confirm",
             process_status="complete",
             updated_at=datetime.utcnow()
         )
 
-        # Создаем выплату
+        # === Создаем выплату ===
         await create_konsol_payment(claim)
 
-        # ОБНОВЛЯЕМ ПОДПИСЬ К ФОТО (если сообщение содержит медиа)
+        # === Обновляем сообщение в группе ===
         if call.message.photo:
-            # Если сообщение с фото - используем edit_caption
             current_caption = call.message.caption or ""
             new_caption = f"{current_caption}\n\n✅ Статус: Оплата подтверждена"
-
-            await call.message.edit_caption(
-                caption=new_caption,
-                reply_markup=None  # Убираем кнопки после подтверждения
-            )
+            await call.message.edit_caption(caption=new_caption, reply_markup=None)
         else:
-            # Если обычное текстовое сообщение - используем edit_text
             current_text = call.message.text or ""
             new_text = f"{current_text}\n\n✅ Статус: Оплата подтверждена"
-
-            await call.message.edit_text(
-                text=new_text,
-                reply_markup=None  # Убираем кнопки после подтверждения
-            )
+            await call.message.edit_text(text=new_text, reply_markup=None)
 
         print(f"✏️ Сообщение обновлено")
-
         await call.answer("✅ Оплата подтверждена")
 
     except Exception as e:
         print(f"❌ Ошибка подтверждения заявки: {e}")
-        import traceback
-        traceback.print_exc()
         await call.answer("Ошибка подтверждения", show_alert=True)
 
 
@@ -206,84 +192,70 @@ async def process_claim_rejection(call: CallbackQuery, claim_id: str):
 async def create_konsol_payment(claim: Claim):
     """Создание платежа в konsol.pro на основе заявки"""
     try:
-        # Определяем тип платежа и соответствующие поля
-        if claim.payment_method == "card":
-            payment_type = "card_payment"
-            payment_data = {
-                "amount": claim.amount,
-                "currency": "RUB",
-                "description": f"Оплата по заявке {claim.claim_id}",
-                "payment_type": payment_type,
-                "card_number": claim.card,
-                "user_id": claim.user_id,
-                "external_id": f"claim_{claim.claim_id}"
-            }
-        elif claim.payment_method == "phone":
-            payment_type = "phone_payment"
-            payment_data = {
-                "amount": claim.amount,
-                "currency": "RUB",
-                "description": f"Оплата по заявке {claim.claim_id}",
-                "payment_type": payment_type,
-                "phone_number": claim.phone,
-                "bank": claim.bank,
-                "user_id": claim.user_id,
-                "external_id": f"claim_{claim.claim_id}"
+        # === Подготовка данных для API ===
+        # Определяем тип выплаты: fps или card
+        bank_details_kind = "fps" if claim.phone else "card"
+
+        if bank_details_kind == "fps":
+            if not claim.bank_member_id:
+                print(f"[PAYMENT ERROR] claim.bank_member_id отсутствует для заявки {claim.claim_id}")
+                return
+
+            bank_details = {
+                "fps_mobile_phone": claim.phone,
+                "fps_bank_member_id": claim.bank_member_id
             }
         else:
-            # По умолчанию карта, если метод не определен
-            payment_type = "card_payment"
-            payment_data = {
-                "amount": claim.amount,
-                "currency": "RUB",
-                "description": f"Оплата по заявке {claim.claim_id}",
-                "payment_type": payment_type,
-                "user_id": claim.user_id,
-                "external_id": f"claim_{claim.claim_id}"
+            bank_details = {
+                "card_number": claim.card
             }
 
-        # Создаем платеж через konsol.pro API
+        # Подготовка тела запроса
+        payment_data = {
+            "contractor_id": claim.contractor_id,  # ← из User
+            "services_list": [
+                {
+                    "title": f"Выплата по заявке {claim.claim_id}",
+                    "amount": str(claim.amount)  # строка, как в API
+                }
+            ],
+            "bank_details_kind": bank_details_kind,
+            "bank_details": bank_details,
+            "purpose": "Выплата выигрыша",
+            "amount": str(claim.amount)
+        }
+
+        # === Создание платежа в Konsol API ===
         result = await konsol_client.create_payment(payment_data)
 
-        if result and 'id' in result:
-            payment_id = result.get('id')
-            payment_url = result.get('payment_url')
+        # === Сохранение в БД ===
+        await KonsolPayment.create(
+            konsol_id=result["id"],
+            contractor_id=payment_data["contractor_id"],
+            amount=claim.amount,
+            status=result["status"],  # created, manualpay, ...
+            purpose=payment_data["purpose"],
+            services_list=payment_data["services_list"],
+            bank_details_kind=bank_details_kind,
+            card_number=claim.card,
+            phone_number=claim.phone,
+            bank_member_id=claim.bank_member_id,
+            claim_id=claim.claim_id,
+            user_id=claim.user_id
+        )
 
-            # Сохраняем платеж в базу данных
-            db_payment_data = {
-                "konsol_id": payment_id,
-                "amount": payment_data["amount"],
-                "currency": payment_data["currency"],
-                "status": result.get('status', 'pending'),
-                "description": payment_data["description"],
-                "payment_type": payment_type,
-                "user_id": claim.user_id,
-                "external_id": payment_data["external_id"],
-                "payment_url": payment_url,
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
-            }
+        # === Уведомление пользователю (сразу после создания) ===
+        await bot.send_message(
+            chat_id=claim.user_id,
+            text="✅ Ваш выигрыш отправлен на указанные реквизиты."
+        )
 
-            # Добавляем специфичные поля
-            if payment_type == "card_payment" and claim.card:
-                db_payment_data["card_number"] = claim.card
-            elif payment_type == "phone_payment":
-                if claim.phone:
-                    db_payment_data["phone_number"] = claim.phone
-                if claim.bank:
-                    db_payment_data["bank"] = claim.bank
-
-            await KonsolPayment.create(**db_payment_data)
-
-            # Отправляем уведомление пользователю
-            await send_payment_notification_to_user(claim.user_id, payment_id, payment_url, claim.amount)
-
-            print(f"[PAYMENT] Платеж создан для заявки {claim.claim_id}: {payment_id}")
-        else:
-            print(f"[PAYMENT ERROR] Не удалось создать платеж для заявки {claim.claim_id}: {result}")
+        print(f"[PAYMENT] Платёж создан для заявки {claim.claim_id}: {result['id']}")
 
     except Exception as e:
         print(f"[PAYMENT ERROR] Ошибка создания платежа для заявки {claim.claim_id}: {e}")
+        # Опционально: обновить статус заявки на "ошибка"
+        await claim.update(claim_status="failed", process_status="cancelled")
 
 
 async def send_payment_notification_to_user(user_id: int, payment_id: str, payment_url: str, amount: float):
