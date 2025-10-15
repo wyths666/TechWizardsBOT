@@ -1,22 +1,17 @@
+import re
+from asyncio import Lock
 from aiogram import Router, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, ForceReply
-import re
-
-from bot.handlers.admin.commands import pending_actions, send_message_to_user
+from bot.handlers.admin.chat_with_user import pending_actions
 from bot.templates.admin import menu as tadmin
-from bot.templates.admin.menu import admin_reply_ikb
 from bot.templates.user import reg as treg
 from bot.templates.user import menu as tmenu
-from bot.templates.user.menu import user_reply_ikb
 from core.bot import bot, bot_config
 from db.beanie.models import User, Claim, AdminMessage
 from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
-from asyncio import Lock
-
-from utils.konsol_client import konsol_client
 
 router = Router()
 user_locks = {}
@@ -38,33 +33,21 @@ async def start_new_user(msg: Message, state: FSMContext):
             username=username,
             role=role
         )
+        await msg.answer(
+            text="Добро пожаловать в мир уникальных картин на металле и персонализированных украшений! Здесь каждая деталь - это эмоция, а каждый предмет - история, которую можно потрогать.",
+            reply_markup=tmenu.welcome_ikb()
+        )
 
-        # === Создаём контрактора в Konsol API ===
-        contractor_data = {
-            "kind": "individual",  # по ТЗ работаем только с физлицами
-            # "taxpayer_id": "..."  # не обязателен для физлиц
-        }
 
-        try:
-            contractor_result = await konsol_client.create_contractor(contractor_data)
-            contractor_id = contractor_result["id"]
 
-            # === Сохраняем contractor_id в User ===
-            await user.update(contractor_id=contractor_id)
+    else:
+        await msg.answer(
+             text="Чтобы принять участие в акции, введите секретный код, указанный на голограмме продукта.",
+             # reply_markup=tmenu.support_ikb() # Опционально: кнопка поддержки
+        )
+        # Переводим его в состояние ожидания кода
+        await state.set_state(treg.RegState.waiting_for_code)
 
-            print(f"[CONTRACTOR] Контрактор создан для {user_id}: {contractor_id}")
-
-        except Exception as e:
-            print(f"[CONTRACTOR ERROR] Не удалось создать контрактор для {user_id}: {e}")
-            # Опционально: отправить админу уведомление
-            # await bot.send_message(админ_id, f"Ошибка создания контрактора для {user_id}")
-
-    # === Теперь пользователь точно есть в БД ===
-    # Показываем приветствие и кнопку "Запустить"
-    await msg.answer(
-        text=treg.welcome_text,
-        reply_markup=treg.welcome_ikb()
-    )
     await msg.delete()
 
 
@@ -74,7 +57,6 @@ async def handle_get_gift(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(text=treg.start_text)
     await state.set_state(treg.RegState.waiting_for_code)
     await call.answer()
-
 
 
 @router.message(StateFilter(treg.RegState.waiting_for_code))
@@ -89,7 +71,7 @@ async def process_code(msg: Message, state: FSMContext):
     # Отправляем сообщение о выигрыше
     await msg.answer(text=treg.code_found_text)
 
-    CHANNEL_USERNAME = "@zdorovkakslon"
+    CHANNEL_USERNAME = "@zdorovkakslon" #zdorovkakslon"
     is_subscribed = await check_user_subscription(bot, msg.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
@@ -102,6 +84,7 @@ async def process_code(msg: Message, state: FSMContext):
 
     # Успешно — идём к отзыву
     await proceed_to_review(msg, state, code)
+
 
 @router.callback_query(treg.RegCallback.filter(F.step == "check_sub"))
 async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
@@ -120,7 +103,6 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
         await call.answer("Вы всё ещё не подписаны. Попробуйте снова.", show_alert=True)
         return
 
-
     await call.message.delete()
     await proceed_to_review(call.message, state, code)
     await call.answer()
@@ -129,6 +111,9 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
 async def proceed_to_review(msg: Message, state: FSMContext, code: str):
     """Переход к отзыву после успешной проверки кода и подписки"""
     claim_id = await Claim.generate_next_claim_id()
+
+    user = await User.get(tg_id=msg.from_user.id)
+
 
     await Claim.create(
         claim_id=claim_id,
@@ -140,12 +125,12 @@ async def proceed_to_review(msg: Message, state: FSMContext, code: str):
         payment_method="unknown",
         review_text="",
         photo_file_ids=[]
-
     )
 
     await state.update_data(claim_id=claim_id, entered_code=code)
     await msg.answer(text=treg.review_request_text, reply_markup=tmenu.send_screenshot_ikb())
     await state.set_state(treg.RegState.waiting_for_screenshot)
+
 
 
 @router.callback_query(treg.RegCallback.filter())
@@ -192,13 +177,11 @@ async def process_screenshot(msg: Message, state: FSMContext):
             screenshot_received=True
         )
 
-        # === РЕДАКТИРУЕМ существующее сообщение или создаём новое ===
         existing_msg_id = data.get("phone_card_message_id")
 
         new_text = f"{treg.phone_or_card_text}"
 
         if existing_msg_id:
-            # Редактируем существующее сообщение
             try:
                 await bot.edit_message_text(
                     chat_id=msg.chat.id,
@@ -210,7 +193,6 @@ async def process_screenshot(msg: Message, state: FSMContext):
                 if "message is not modified" not in str(e):
                     print(f"Ошибка редактирования: {e}")
         else:
-            # Первый раз — отправляем новое сообщение
             sent_msg = await msg.answer(
                 text=new_text,
                 reply_markup=tmenu.phone_or_card_ikb()
@@ -218,7 +200,6 @@ async def process_screenshot(msg: Message, state: FSMContext):
             await state.update_data(phone_card_message_id=sent_msg.message_id)
 
         await state.set_state(treg.RegState.waiting_for_phone_or_card)
-
 
 
 @router.message(StateFilter(treg.RegState.waiting_for_phone_number))
@@ -240,10 +221,7 @@ async def process_card(msg: Message, state: FSMContext):
         await msg.answer("Не похоже на номер карты. Пожалуйста, укажите номер карты в формате 2222 2222 2222 2222")
         return
 
-    # Сохраняем карту
     await state.update_data(card=card)
-
-    # ❗ Для карты — НЕ запрашиваем банк, сразу завершаем
     await finalize_claim(msg, state)
 
 
@@ -278,9 +256,11 @@ async def finalize_claim(msg: Message, state: FSMContext):
     if phone:
         payment_info = f"Номер телефона: {phone}"
         bank_info = f"Банк: {bank}\n" if bank else ""
+        payment_method_label = "phone"
     else:
         payment_info = f"Номер карты: {card}"
         bank_info = ""
+        payment_method_label = "card"
 
     claim_text = (
         f"Номер заявки: {claim_id}\n"
@@ -290,20 +270,26 @@ async def finalize_claim(msg: Message, state: FSMContext):
     )
 
     # === Отправка в группу ===
-    MANAGER_GROUP_ID = -4945969550
+    MANAGER_GROUP_ID = -4916537553
+
+    # === Определяем клавиатуру ===
+    if phone:  # Если СБП - показываем кнопку для ввода ID банка
+        keyboard = tadmin.claim_action_ikb_with_bank_button(claim_id)
+    else:  # Если карта - обычная клавиатура
+        keyboard = tadmin.claim_action_ikb(claim_id)
 
     # === Отправка фото и текста ===
     if photo_ids:
         if len(photo_ids) == 1:
-            # ✅ ОДНО ФОТО: отправляем фото с подписью и кнопками
+            # ОДНО ФОТО: отправляем фото с подписью и кнопками
             await bot.send_photo(
                 chat_id=MANAGER_GROUP_ID,
                 photo=photo_ids[0],
                 caption=f"{claim_text}\n\n📸 Скриншот к заявке №{claim_id}",
-                reply_markup=tadmin.claim_action_ikb(claim_id)
+                reply_markup=keyboard  # Используем правильную клавиатуру
             )
         else:
-            # ✅ НЕСКОЛЬКО ФОТО: создаем медиагруппу правильно
+            # НЕСКОЛЬКО ФОТО: создаем медиагруппу
             media_group = []
             for i, fid in enumerate(photo_ids):
                 if i == 0:  # Только у первого фото может быть подпись
@@ -316,11 +302,11 @@ async def finalize_claim(msg: Message, state: FSMContext):
 
             try:
                 await bot.send_media_group(chat_id=MANAGER_GROUP_ID, media=media_group)
-                # ✅ Отправляем кнопки отдельно после медиагруппы
+                # Отправляем кнопки отдельно после медиагруппы
                 await bot.send_message(
                     chat_id=MANAGER_GROUP_ID,
                     text=f"Действия по заявке №{claim_id}:",
-                    reply_markup=tadmin.claim_action_ikb(claim_id)
+                    reply_markup=keyboard  # Используем правильную клавиатуру
                 )
             except Exception as e:
                 print(f"Ошибка отправки медиагруппы: {e}")
@@ -335,21 +321,20 @@ async def finalize_claim(msg: Message, state: FSMContext):
                 await bot.send_message(
                     chat_id=MANAGER_GROUP_ID,
                     text=f"Действия по заявке №{claim_id}:",
-                    reply_markup=tadmin.claim_action_ikb(claim_id)
+                    reply_markup=keyboard  # Используем правильную клавиатуру
                 )
     else:
-        # ✅ ЕСЛИ ФОТО НЕТ: отправляем только текст
         await bot.send_message(
             chat_id=MANAGER_GROUP_ID,
             text=claim_text,
-            reply_markup=tadmin.claim_action_ikb(claim_id)
+            reply_markup=keyboard  # Используем правильную клавиатуру
         )
 
     # === Подготавливаем данные для обновления ===
     update_data = {
         "process_status": "complete",
         "claim_status": "process",
-        "payment_method": "phone" if phone else "card",
+        "payment_method": payment_method_label,
         "review_text": review_text,
         "photo_file_ids": photo_ids
     }
@@ -357,17 +342,13 @@ async def finalize_claim(msg: Message, state: FSMContext):
     # Добавляем данные в зависимости от выбранного способа оплаты
     if phone:  # Если выбран телефон
         update_data["phone"] = phone
-        update_data["bank"] = bank
         update_data["card"] = None
     elif card:  # Если выбрана карта
         update_data["card"] = card
         update_data["phone"] = None
-        update_data["bank"] = None
 
     # === Обновляем заявку ===
-    for field, value in update_data.items():
-        setattr(claim, field, value)
-    await claim.replace()
+    await claim.update(**update_data)
 
     # === Завершение ===
     await msg.answer(text=treg.success_text)
@@ -394,4 +375,3 @@ async def reply_to_admin(call: CallbackQuery):
         reply_markup=ForceReply(input_field_placeholder="Ваш ответ...")
     )
     await call.answer()
-

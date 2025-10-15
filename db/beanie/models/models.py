@@ -1,10 +1,11 @@
 import pytz
-from typing import Optional, List, Dict, Any, Union
+from typing import List, Dict, Any, Union
 from datetime import datetime
 from decimal import Decimal
 from beanie import Document
-
-
+from typing import get_origin, get_args, Optional
+from pydantic import TypeAdapter, ValidationError
+from typing import get_type_hints
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 # Базовый класс для CRUD-операций
@@ -24,20 +25,45 @@ class ModelAdmin(Document):
         await obj.insert()
         return obj
 
+    class CellTypeExp(Exception):
+        """Кастомное исключение для ошибок типов."""
+        pass
+
     async def update(self, **kwargs):
         """
-        Обновляет поля объекта новыми значениями.
+        Обновляет поля объекта новыми значениями с проверкой типов через Pydantic.
         """
         _set = {"$set": {}}
+
+        # Получаем аннотации типов класса
+        annotations = get_type_hints(self.__class__)
 
         for key, value in kwargs.items():
             if not hasattr(self, key):
                 raise self.CellTypeExp(f"В модели `{self.__class__.__name__}` отсутствует поле `{key}`")
-            elif not isinstance(self.__dict__.get(key), type(value)):
+
+            # Получаем аннотацию поля
+            field_annotation = annotations.get(key)
+            if not field_annotation:
+                # Если аннотация отсутствует, пропускаем проверку
+                _set["$set"][key] = value
+                continue
+
+            # === Проверка типа через Pydantic ===
+            try:
+                adapter = TypeAdapter(field_annotation)
+                # Проверяем значение
+                adapter.validate_python(value)
+            except ValidationError as e:
                 raise self.CellTypeExp(
-                    f"Тип данных поля `{key}` модели `{self.__class__.__name__}` является {type(self.__dict__.get(key))} (не {type(value)})")
+                    f"Недопустимый тип или значение для поля `{key}` модели `{self.__class__.__name__}`: "
+                    f"{e.errors()[0]['msg']}"
+                ) from e
+
+            # === Если проверка прошла — добавляем в обновление ===
             _set["$set"][key] = value
 
+        # === Выполняем обновление в БД ===
         await super().update(_set)
 
     async def delete(self):
@@ -92,17 +118,8 @@ class User(ModelAdmin):
     tg_id: int
     username: Optional[str] = None
     role: str = "user"
-
     # === Поля для Konsol API ===
-    contractor_id: Optional[str] = None  # UUID от Konsol
     kind: str = "individual"  # всегда "individual"
-    taxpayer_id: Optional[str] = None  # ИНН (не обязателен)
-
-    # === Последние реквизиты для выплат (для удобства) ===
-    # last_fps_mobile_phone: Optional[str] = None  # для СБП
-    # last_fps_bank_member_id: Optional[str] = None  # ID банка из справочника СБП
-    # last_card_number: Optional[str] = None  # для выплат на карту
-
     created_at: datetime = datetime.now(MOSCOW_TZ)
 
     class Settings:
@@ -110,6 +127,7 @@ class User(ModelAdmin):
 
 
 class Claim(ModelAdmin):
+    contractor_id: Optional[str] = None
     claim_id: str  # "000001"
     user_id: int  # tg_id
     code: str
@@ -117,7 +135,7 @@ class Claim(ModelAdmin):
     process_status: str = "process"  # "process" / "complete" / "cancelled"
     claim_status: str = "pending"  # "pending", "confirm", "cancelled"
     payment_method: str  # "phone" / "card"
-    amount: Decimal = Decimal("1.00")  # Сумма платежа (хранится как Decimal)
+    amount: float = 1.00  # Сумма платежа
 
     # === Реквизиты из заявки (не дублируются в User) ===
     phone: Optional[str] = None  # если выбрана СБП

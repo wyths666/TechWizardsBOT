@@ -21,7 +21,7 @@ class BotConfig(BaseSettings):
     COMMANDS: List[BotCommand] = [
         BotCommand(
             command='start',
-            description='Меню'
+            description='Запуск'
         )
     ]
     ADMIN_COMMANDS: List[BotCommand] = [
@@ -127,10 +127,10 @@ class KonsolConfig(BaseSettings):
 
 
 class Config:
-    psql = PostgresConfig()
-    redis = RedisConfig()
+    #psql = PostgresConfig()
+    #redis = RedisConfig()
     mongo = MongoConfig()
-    api = ApiConfig()
+    #api = ApiConfig()
     bot = BotConfig()
     proj = ProjConfig()
     mysql = MysqlConfig()

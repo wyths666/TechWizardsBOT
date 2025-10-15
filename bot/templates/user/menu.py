@@ -51,3 +51,4 @@ def user_reply_ikb(claim_id):
     builder = InlineKeyboardBuilder()
     builder.button(text="💬 Ответить администратору", callback_data=f"reply_{claim_id}")
     return builder.as_markup()
+

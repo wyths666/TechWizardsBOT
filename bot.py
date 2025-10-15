@@ -43,16 +43,20 @@ async def startup(bot: Bot) -> None:
 
     # === Настройка команд бота ===
     await bot.delete_webhook()
+    user_commands = [
+        cmd for cmd in cnf.bot.COMMANDS
+        if cmd.command != "admin"
+    ]
     await bot.set_my_commands(
-        commands=cnf.bot.COMMANDS,
+        commands=user_commands,
         scope=BotCommandScopeDefault()
     )
-    for admin in cnf.bot.ADMINS or []:
-        with contextlib.suppress(TelegramBadRequest):
-            await bot.set_my_commands(
-                cnf.bot.COMMANDS + cnf.bot.ADMIN_COMMANDS,
-                scope=BotCommandScopeChat(chat_id=admin)
-            )
+    # for admin in cnf.bot.ADMINS or []:
+    #     with contextlib.suppress(TelegramBadRequest):
+    #         await bot.set_my_commands(
+    #             cnf.bot.COMMANDS + cnf.bot.ADMIN_COMMANDS,
+    #             scope=BotCommandScopeChat(chat_id=admin)
+    #         )
 
     logger.info('=== Bot started ===')
 
