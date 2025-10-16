@@ -135,7 +135,7 @@ class Claim(ModelAdmin):
     process_status: str = "process"  # "process" / "complete" / "cancelled"
     claim_status: str = "pending"  # "pending", "confirm", "cancelled"
     payment_method: str  # "phone" / "card"
-    amount: float = 1.00  # Сумма платежа
+    amount: float = 100.00  # Сумма платежа
 
     # === Реквизиты из заявки (не дублируются в User) ===
     phone: Optional[str] = None  # если выбрана СБП
