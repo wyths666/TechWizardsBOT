@@ -12,6 +12,7 @@ from core.bot import bot, bot_config
 from db.beanie.models import User, Claim, AdminMessage
 from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
+from config import cnf
 
 router = Router()
 user_locks = {}
@@ -270,7 +271,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     )
 
     # === Отправка в группу ===
-    MANAGER_GROUP_ID = -4916537553
+    MANAGER_GROUP_ID = cnf.bot.GROUP_ID
 
     # === Определяем клавиатуру ===
     if phone:  # Если СБП - показываем кнопку для ввода ID банка

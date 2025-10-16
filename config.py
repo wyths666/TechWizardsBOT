@@ -18,6 +18,7 @@ class ProjConfig(BaseSettings):
 class BotConfig(BaseSettings):
     TOKEN: str
     ADMINS: List[int] | None = []
+    GROUP_ID: int
     COMMANDS: List[BotCommand] = [
         BotCommand(
             command='start',
