@@ -205,9 +205,17 @@ async def process_screenshot(msg: Message, state: FSMContext):
 
 @router.message(StateFilter(treg.RegState.waiting_for_phone_number))
 async def process_phone(msg: Message, state: FSMContext):
-    phone = msg.text.strip()
-    if not re.match(r'^(?:\+7|8)\d{10}$', phone):
+    # ПРОВЕРЯЕМ, что сообщение содержит текст
+    if not msg.text:
         await msg.answer("Не похоже на номер телефона. Пожалуйста, укажите номер телефона в формате +7**********")
+        return
+
+    phone = msg.text.strip()
+
+    # ПРОВЕРЯЕМ формат номера телефона
+    if not re.match(r'^(?:\+7|8)\d{10}$', phone):
+        await msg.answer(
+            "Не похоже на номер телефона. Пожалуйста, укажите номер телефона в формате +7**********")
         return
 
     await state.update_data(phone=phone)
@@ -217,9 +225,17 @@ async def process_phone(msg: Message, state: FSMContext):
 
 @router.message(StateFilter(treg.RegState.waiting_for_card_number))
 async def process_card(msg: Message, state: FSMContext):
-    card = msg.text.replace(" ", "").strip()
-    if not card.isdigit() or len(card) != 16:
+    # ПРОВЕРЯЕМ, что сообщение содержит текст
+    if not msg.text:
         await msg.answer("Не похоже на номер карты. Пожалуйста, укажите номер карты в формате 2222 2222 2222 2222")
+        return
+
+    card = msg.text.replace(" ", "").strip()
+
+    # ПРОВЕРЯЕМ формат номера карты
+    if not card.isdigit() or len(card) != 16:
+        await msg.answer(
+            "Не похоже на номер карты. Пожалуйста, укажите номер карты в формате 2222 2222 2222 2222")
         return
 
     await state.update_data(card=card)
@@ -228,6 +244,11 @@ async def process_card(msg: Message, state: FSMContext):
 
 @router.message(StateFilter(treg.RegState.waiting_for_bank))
 async def process_bank(msg: Message, state: FSMContext):
+    # ПРОВЕРЯЕМ, что сообщение содержит текст
+    if not msg.text:
+        await msg.answer("❌ Пожалуйста, отправьте название банка текстом.")
+        return
+
     bank = msg.text.strip()
     await state.update_data(bank=bank)
     await finalize_claim(msg, state)
