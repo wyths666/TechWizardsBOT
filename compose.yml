@@ -1,37 +1,21 @@
-version: '3.8'
-
 services:
-  postgres:
-    image: postgres:latest
-    restart: always
+  mongo:
+    image: mongo
+    restart: unless-stopped
     environment:
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_NAME}
+      MONGO_INITDB_DATABASE: ${MONGO_NAME}
     expose:
-      - 5432
+      - '27017'
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-
-  redis:
-    image: redis/redis-stack:latest
-    restart: always
-    container_name: redis
-    command: redis-server --requirepass ${PASSWORD} --loadmodule /opt/redis-stack/lib/redisearch.so --loadmodule /opt/redis-stack/lib/rejson.so --loadmodule /opt/redis-stack/lib/redisbloom.so --loadmodule /opt/redis-stack/lib/redistimeseries.so
-    expose:
-      - 6379
-    volumes:
-      - redis-data:/data
-    env_file:
-      - .env
+      - mongo-data:/data/db
 
   bot:
     build:
       context: .
       dockerfile: bot.dockerfile
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      - mongo
     env_file:
       - .env
     volumes:
@@ -41,17 +25,15 @@ services:
     build:
       context: .
       dockerfile: api.dockerfile
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      - mongo
     env_file:
       - .env
     ports:
-      - "9000:9000"
+      - "9010:9000"
     volumes:
       - ./:/api
 
 volumes:
-  postgres-data:
-  redis-data:
+  mongo-data:

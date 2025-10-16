@@ -2,7 +2,6 @@
 aiogram~=3.18.0
 # Postgres
 SQLAlchemy~=2.0.38
-asyncpg~=0.30.0
 # Redis
 redis-om~=0.3.3
 redis~=5.2.1
@@ -19,3 +18,4 @@ pydantic-settings~=2.4.0
 pydantic~=2.7.4
 aiohttp~=3.11.12
 aiomysql==0.2.0
+pytz

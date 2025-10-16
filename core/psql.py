@@ -4,7 +4,7 @@ from sqlalchemy.orm import DeclarativeBase
 from config import cnf
 
 engine = create_async_engine(
-    url=cnf.psql.URL,
+    url=cnf.mysql.URL,
     # echo=True,
     pool_size=50,
     max_overflow=20
