@@ -37,7 +37,7 @@ async def receive_bank_id(msg: Message, state: FSMContext):
     claim_id = data.get("pending_claim_id")
 
     if not claim_id:
-        await msg.reply("❌ Ошибка: ID заявки не найден. Попробуйте снова.")
+        await msg.answer("❌ Ошибка: ID заявки не найден. Попробуйте снова.")
         await state.clear()
         return
 
@@ -46,13 +46,13 @@ async def receive_bank_id(msg: Message, state: FSMContext):
     # Найдем заявку
     claim = await Claim.get(claim_id=claim_id)
     if not claim:
-        await msg.reply("❌ Заявка не найдена.")
+        await msg.answer("❌ Заявка не найдена.")
         await state.clear()
         return
 
     # Проверим, что это заявка СБП
     if not claim.phone:
-        await msg.reply("❌ Эта заявка не является заявкой СБП.")
+        await msg.answer("❌ Эта заявка не является заявкой СБП.")
         await state.clear()
         return
 
@@ -60,7 +60,7 @@ async def receive_bank_id(msg: Message, state: FSMContext):
     await claim.update(bank_member_id=bank_member_id)
 
     # Отправляем клавиатуру с подтверждением
-    await msg.reply(
+    await msg.answer(
         text=f"✅ ID банка <code>{bank_member_id}</code> сохранен для заявки <b>{claim_id}</b>.\n\n"
              f"<b>Выберите действие:</b>",
         parse_mode="HTML",
