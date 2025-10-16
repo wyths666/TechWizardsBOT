@@ -177,7 +177,7 @@ class KonsolPayment(ModelAdmin):
     """Модель для платежей konsol.pro"""
     konsol_id: Optional[str] = None  # ID платежа в konsol.pro (заполняется после создания)
     contractor_id: str  # ID исполнителя в Konsol (берётся из User)
-    amount: Decimal = Decimal("1.00")  # Сумма (Decimal)
+    amount: Decimal = Decimal("100.00")  # Сумма (Decimal)
     status: str  # created, manualpay, executed, failed, nalog_unbound
     purpose: str  # Назначение платежа
     services_list: List[Dict[str, Any]]  # Список услуг: [{"title": "...", "amount": "100.00"}]

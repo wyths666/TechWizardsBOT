@@ -51,7 +51,7 @@ Authorization: Bearer {your_api_token}
 Content-Type: application/json
 
 {
-    "amount": 1000.00,
+    "amount": 100.00,
     "currency": "RUB",
     "description": "Оплата услуг",
     "payment_type": "card_payment",
@@ -73,7 +73,7 @@ Authorization: Bearer {your_api_token}
 Content-Type: application/json
 
 {
-    "amount": 1000.00,
+    "amount": 100.00,
     "currency": "RUB",
     "description": "Оплата услуг",
     "payment_type": "phone_payment",
@@ -138,7 +138,7 @@ Content-Type: application/json
     "event": "payment.completed",
     "data": {
         "id": "payment_123",
-        "amount": 1000.00,
+        "amount": 100.00,
         "status": "completed"
     },
     "timestamp": "2024-01-01T12:00:00Z",
