@@ -38,9 +38,6 @@ async def start_new_user(msg: Message, state: FSMContext):
             text="Добро пожаловать в мир уникальных картин на металле и персонализированных украшений! Здесь каждая деталь - это эмоция, а каждый предмет - история, которую можно потрогать.",
             reply_markup=tmenu.welcome_ikb()
         )
-
-
-
     else:
         await msg.answer(
              text="Чтобы принять участие в акции, введите секретный код, указанный на голограмме продукта.",
@@ -84,7 +81,7 @@ async def process_code(msg: Message, state: FSMContext):
         return
 
     # Успешно — идём к отзыву
-    await proceed_to_review(msg, state, code)
+    await proceed_to_review(user_tg_id=msg.from_user.id, state=state, code=code)
 
 
 @router.callback_query(treg.RegCallback.filter(F.step == "check_sub"))
@@ -105,20 +102,18 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
         return
 
     await call.message.delete()
-    await proceed_to_review(call.message, state, code)
+    await proceed_to_review(user_tg_id=call.from_user.id, state=state, code=code)
     await call.answer()
 
 
-async def proceed_to_review(msg: Message, state: FSMContext, code: str):
+async def proceed_to_review(user_tg_id: int, state: FSMContext, code: str):
     """Переход к отзыву после успешной проверки кода и подписки"""
     claim_id = await Claim.generate_next_claim_id()
 
-    user = await User.get(tg_id=msg.from_user.id)
-
-
+    # Создаём заявку с user_tg_id (гарантированно правильный ID)
     await Claim.create(
         claim_id=claim_id,
-        user_id=msg.from_user.id,
+        user_id=user_tg_id,
         code=code,
         code_status="valid",
         process_status="process",
@@ -129,7 +124,12 @@ async def proceed_to_review(msg: Message, state: FSMContext, code: str):
     )
 
     await state.update_data(claim_id=claim_id, entered_code=code)
-    await msg.answer(text=treg.review_request_text, reply_markup=tmenu.send_screenshot_ikb())
+    # Получаем chat_id для отправки сообщения (в личке = user_tg_id)
+    await bot.send_message(
+        chat_id=user_tg_id,
+        text=treg.review_request_text,
+        reply_markup=tmenu.send_screenshot_ikb()
+    )
     await state.set_state(treg.RegState.waiting_for_screenshot)
 
 
@@ -239,7 +239,7 @@ async def process_card(msg: Message, state: FSMContext):
         return
 
     await state.update_data(card=card)
-    await finalize_claim(msg, state)
+    await finalize_claim(user_tg_id=msg.from_user.id, state=state)
 
 
 @router.message(StateFilter(treg.RegState.waiting_for_bank))
@@ -251,21 +251,21 @@ async def process_bank(msg: Message, state: FSMContext):
 
     bank = msg.text.strip()
     await state.update_data(bank=bank)
-    await finalize_claim(msg, state)
+    await finalize_claim(user_tg_id=msg.from_user.id, state=state)
 
 
-async def finalize_claim(msg: Message, state: FSMContext):
+async def finalize_claim(user_tg_id: int, state: FSMContext):
     """Завершает заявку и отправляет её в группу менеджеров"""
     data = await state.get_data()
     claim_id = data.get("claim_id")
 
     if not claim_id:
-        await msg.answer("Ошибка: заявка не найдена.")
+        await bot.send_message(chat_id=user_tg_id, text="Ошибка: заявка не найдена.")
         return
 
     claim = await Claim.get(claim_id=claim_id)
     if not claim:
-        await msg.answer("Ошибка: заявка не найдена в базе.")
+        await bot.send_message(chat_id=user_tg_id, text="Ошибка: заявка не найдена в базе.")
         return
 
     phone = data.get('phone')
@@ -373,7 +373,7 @@ async def finalize_claim(msg: Message, state: FSMContext):
     await claim.update(**update_data)
 
     # === Завершение ===
-    await msg.answer(text=treg.success_text)
+    await bot.send_message(chat_id=user_tg_id, text=treg.success_text)
     await state.clear()
 
 
