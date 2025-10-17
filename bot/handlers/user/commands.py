@@ -4,7 +4,7 @@ from aiogram import Router, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, ForceReply
-from bot.handlers.admin.chat_with_user import pending_actions
+from utils.pending_storage import pending_actions
 from bot.templates.admin import menu as tadmin
 from bot.templates.user import reg as treg
 from bot.templates.user import menu as tmenu
@@ -380,17 +380,18 @@ async def finalize_claim(user_tg_id: int, state: FSMContext):
 @router.callback_query(F.data.startswith("reply_"))
 async def reply_to_admin(call: CallbackQuery):
     claim_id = call.data.replace("reply_", "")
-
     claim = await Claim.get(claim_id=claim_id)
     if not claim:
         await call.answer("Заявка не найдена", show_alert=True)
         return
 
-    # Сохраняем действие ответа
+    # Сохраняем в ОБЩИЙ словарь
     pending_actions[call.from_user.id] = {
         "type": "user_reply",
         "claim_id": claim_id
     }
+
+
 
     await call.message.answer(
         "💬 Введите ваш ответ администратору:",
