@@ -10,11 +10,9 @@ from db.beanie.models import Claim, AdminMessage, KonsolPayment
 from core.bot import bot, bot_config
 from db.beanie.models.models import MOSCOW_TZ
 from utils.konsol_client import konsol_client
-
+from utils.pending_storage import pending_actions
 router = Router()
 
-pending_actions = {}  # {user_id: {"type": "message", "claim_id": "000001", "data": {...}}}
-pending_replies = {}  # Для ForceReply
 
 
 @router.callback_query(F.data.startswith("message_"))
@@ -143,8 +141,10 @@ async def send_payment_request(call: CallbackQuery):
 async def handle_force_reply(msg: Message):
     user_id = msg.from_user.id
 
+
     if user_id in pending_actions:
         action = pending_actions[user_id]
+
 
         if action["type"] == "message":
             # Админ пишет пользователю
@@ -155,6 +155,10 @@ async def handle_force_reply(msg: Message):
             await process_user_to_admin_reply(msg, action)
 
         del pending_actions[user_id]
+        
+    else:
+        print(f"🔍 Действие НЕ найдено для user_id: {user_id}")
+        await msg.answer("❌ Сессия устарела. Начните заново.")
 
 
 async def process_admin_to_user_message(msg: Message, action: dict):
