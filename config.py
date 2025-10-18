@@ -19,6 +19,8 @@ class BotConfig(BaseSettings):
     TOKEN: str
     ADMINS: List[int] | None = []
     GROUP_ID: int
+    CHANNEL_USERNAME: str
+    SUPPORT: str
     COMMANDS: List[BotCommand] = [
         BotCommand(
             command='start',
