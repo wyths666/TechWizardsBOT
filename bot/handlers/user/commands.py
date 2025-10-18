@@ -13,7 +13,7 @@ from db.beanie.models import User, Claim, AdminMessage
 from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
 from config import cnf
-
+from aiogram.types import FSInputFile
 router = Router()
 user_locks = {}
 
@@ -25,7 +25,6 @@ async def start_new_user(msg: Message, state: FSMContext):
 
     # === Находим или создаём пользователя ===
     user = await User.get(tg_id=user_id)
-
     if not user:
         # === Создаём нового пользователя ===
         role = "admin" if user_id in bot_config.ADMINS else "user"
@@ -34,27 +33,16 @@ async def start_new_user(msg: Message, state: FSMContext):
             username=username,
             role=role
         )
-        await msg.answer(
-            text="Добро пожаловать в мир уникальных картин на металле и персонализированных украшений! Здесь каждая деталь - это эмоция, а каждый предмет - история, которую можно потрогать.",
-            reply_markup=tmenu.welcome_ikb()
-        )
-    else:
-        await msg.answer(
-             text="Чтобы принять участие в акции, введите секретный код, указанный на голограмме продукта.",
-             # reply_markup=tmenu.support_ikb() # Опционально: кнопка поддержки
-        )
-        # Переводим его в состояние ожидания кода
-        await state.set_state(treg.RegState.waiting_for_code)
 
-    await msg.delete()
+    welcome_photo = FSInputFile("utils/IMG_1262.jpg")
+    welcome_text = "Привет! Это бот компании Pure. Введите секретный код, указанный на голограмме."
 
-
-@router.callback_query(F.data == "get_gift")
-async def handle_get_gift(call: CallbackQuery, state: FSMContext):
-    """Обработка кнопки 'Получить подарок' для новых пользователей"""
-    await call.message.edit_text(text=treg.start_text)
+    await msg.answer_photo(
+        photo=welcome_photo,
+        caption=welcome_text
+    )
     await state.set_state(treg.RegState.waiting_for_code)
-    await call.answer()
+    await msg.delete()
 
 
 @router.message(StateFilter(treg.RegState.waiting_for_code))
@@ -69,7 +57,7 @@ async def process_code(msg: Message, state: FSMContext):
     # Отправляем сообщение о выигрыше
     await msg.answer(text=treg.code_found_text)
 
-    CHANNEL_USERNAME = "@zdorovkakslon" #zdorovkakslon"
+    CHANNEL_USERNAME = cnf.bot.CHANNEL_USERNAME
     is_subscribed = await check_user_subscription(bot, msg.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
@@ -94,7 +82,7 @@ async def check_subscription_callback(call: CallbackQuery, state: FSMContext):
         await call.message.delete()
         return
 
-    CHANNEL_USERNAME = "@zdorovkakslon"
+    CHANNEL_USERNAME = cnf.bot.CHANNEL_USERNAME
     is_subscribed = await check_user_subscription(bot, call.from_user.id, CHANNEL_USERNAME)
 
     if not is_subscribed:
