@@ -2,7 +2,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
+from config import cnf
 from bot.templates.user.reg import RegCallback
 
 
@@ -23,7 +23,7 @@ def welcome_ikb():
 
 def support_ikb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.add(InlineKeyboardButton(text="Тех. поддержка", url="https://t.me/EkaterinaKazantseva31"))
+    builder.add(InlineKeyboardButton(text="Тех. поддержка", url=cnf.bot.SUPPORT))
     return builder.as_markup()
 
 
