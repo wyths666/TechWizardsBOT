@@ -34,7 +34,7 @@ async def start_new_user(msg: Message, state: FSMContext):
             role=role
         )
 
-    welcome_photo = FSInputFile("utils/IMG_1262.jpg")
+    welcome_photo = FSInputFile("utils/IMG_1262.png")
     welcome_text = "Привет! Это бот компании Pure. Введите секретный код, указанный на голограмме."
 
     await msg.answer_photo(
