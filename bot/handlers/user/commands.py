@@ -47,6 +47,11 @@ async def start_new_user(msg: Message, state: FSMContext):
 
 @router.message(StateFilter(treg.RegState.waiting_for_code))
 async def process_code(msg: Message, state: FSMContext):
+    if not msg.text:
+        await msg.answer(
+            "❌ Пожалуйста, отправьте корректный код."
+        )
+        return
     code = msg.text.strip()
 
     code_valid = await get_and_delete_code(code)

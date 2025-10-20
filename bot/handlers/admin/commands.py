@@ -33,6 +33,12 @@ async def request_bank_id(call: CallbackQuery, state: FSMContext):
 @router.message(StateFilter(AdminState.waiting_for_bank_id))
 async def receive_bank_id(msg: Message, state: FSMContext):
     """Принимает ID банка от админа и сохраняет его в заявке"""
+    if not msg.text:
+        await msg.answer(
+            "❌ Пожалуйста, отправьте корректный ID банка."
+        )
+        return
+
     data = await state.get_data()
     claim_id = data.get("pending_claim_id")
 
