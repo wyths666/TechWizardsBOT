@@ -35,7 +35,7 @@ def send_screenshot_ikb() -> InlineKeyboardMarkup:
 
 def phone_or_card_ikb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="Указать номер телефона", callback_data=RegCallback(step="phone"))
+    builder.button(text="Указать номер телефона СБП", callback_data=RegCallback(step="phone"))
     builder.button(text="Указать номер карты", callback_data=RegCallback(step="card"))
     builder.adjust(1)
     return builder.as_markup()

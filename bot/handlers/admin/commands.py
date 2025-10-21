@@ -116,12 +116,12 @@ async def process_claim_approval(call: CallbackQuery, claim_id: str):
             contractor_phone = claim.phone
         else:
             # Если карта - используем заглушку
-            contractor_phone = "+79000000001"
+            contractor_phone = "+79000" + claim.claim_id
 
         contractor_data = {
             "kind": "individual",
-            "first_name": call.from_user.first_name or "Пользователь",
-            "last_name": call.from_user.last_name or "Телеграм",
+            "first_name": claim.claim_id,
+            "last_name": "Заявка",
             "phone": contractor_phone
         }
 
