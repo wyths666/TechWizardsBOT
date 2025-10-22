@@ -3,7 +3,7 @@ from asyncio import Lock
 from aiogram import Router, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery, ForceReply
+from aiogram.types import Message, CallbackQuery, ForceReply, InlineKeyboardMarkup, InlineKeyboardButton
 from utils.pending_storage import pending_actions
 from bot.templates.admin import menu as tadmin
 from bot.templates.user import reg as treg
@@ -14,6 +14,7 @@ from db.mysql.crud import get_and_delete_code
 from utils.check_subscribe import check_user_subscription
 from config import cnf
 from aiogram.types import FSInputFile
+
 router = Router()
 user_locks = {}
 
@@ -44,6 +45,37 @@ async def start_new_user(msg: Message, state: FSMContext):
     await state.set_state(treg.RegState.waiting_for_code)
     await msg.delete()
 
+
+@router.message(Command("help"))
+async def help_preserve_state(msg: Message, state: FSMContext):
+    """/help без сброса состояния"""
+
+    # Сохраняем текущее состояние
+    current_state = await state.get_state()
+    current_data = await state.get_data() if current_state else {}
+
+    # Отправляем помощь
+    support_url = cnf.bot.SUPPORT
+    if support_url.startswith("https://t.me/"):
+        username = support_url.replace("https://t.me/", "")
+        support_url = f"tg://resolve?domain={username}"
+
+    await msg.answer(
+        text="💬 <b>Техническая поддержка</b>\n\n"
+             "Нажмите кнопку ниже для перехода в чат поддержки.\n"
+             "⚠️ <i>Вы можете продолжить оформление заявки после обращения.</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(text="💬 Написать в поддержку", url=support_url)
+            ]]
+        )
+    )
+
+    # ВОССТАНАВЛИВАЕМ состояние, если оно было
+    if current_state:
+        await state.set_state(current_state)
+        await state.set_data(current_data)
 
 @router.message(StateFilter(treg.RegState.waiting_for_code))
 async def process_code(msg: Message, state: FSMContext):

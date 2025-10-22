@@ -25,7 +25,8 @@ class BotConfig(BaseSettings):
         BotCommand(
             command='start',
             description='Запуск'
-        )
+        ),
+    BotCommand(command="help", description="Техническая поддержка")
     ]
     ADMIN_COMMANDS: List[BotCommand] = [
         BotCommand(
