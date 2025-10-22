@@ -21,6 +21,8 @@ user_locks = {}
 
 @router.message(Command("start"))
 async def start_new_user(msg: Message, state: FSMContext):
+    await state.clear()
+
     user_id = msg.from_user.id
     username = msg.from_user.username
 
