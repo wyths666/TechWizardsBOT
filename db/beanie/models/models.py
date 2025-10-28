@@ -118,6 +118,7 @@ class User(ModelAdmin):
     tg_id: int
     username: Optional[str] = None
     role: str = "user"
+    banned: bool = False
     # === Поля для Konsol API ===
     kind: str = "individual"  # всегда "individual"
     created_at: datetime = datetime.now(MOSCOW_TZ)

@@ -36,6 +36,8 @@ async def start_new_user(msg: Message, state: FSMContext):
             username=username,
             role=role
         )
+    if user.banned:
+        return
 
     welcome_photo = FSInputFile("utils/IMG_1262.png")
     welcome_text = "Привет! Это бот компании Pure. Введите секретный код, указанный на голограмме."
@@ -51,6 +53,10 @@ async def start_new_user(msg: Message, state: FSMContext):
 @router.message(Command("help"))
 async def help_preserve_state(msg: Message, state: FSMContext):
     """/help без сброса состояния"""
+    user_id = msg.from_user.id
+    user = await User.get(tg_id=user_id)
+    if user.banned:
+        return
 
     # Сохраняем текущее состояние
     current_state = await state.get_state()
@@ -311,11 +317,17 @@ async def finalize_claim(user_tg_id: int, state: FSMContext):
         bank_info = ""
         payment_method_label = "card"
 
+    user_claims = await Claim.filter(user_id=user_tg_id)
+    claim_ids = [claim.claim_id for claim in user_claims if claim.claim_id != claim_id]
+    user_claims_ids = ', '.join(claim_ids) if claim_ids else "Не найдены"
+
     claim_text = (
         f"Номер заявки: {claim_id}\n"
         f"Текст: {review_text}\n"
+        f"Предыдущие заявки пользователя: {user_claims_ids}\n"
         f"{bank_info}"
-        f"{payment_info}"
+        f"{payment_info}\n"
+        f"Статус заявки: Не обработано"
     )
 
     # === Отправка в группу ===
@@ -334,7 +346,7 @@ async def finalize_claim(user_tg_id: int, state: FSMContext):
             await bot.send_photo(
                 chat_id=MANAGER_GROUP_ID,
                 photo=photo_ids[0],
-                caption=f"{claim_text}\n\n📸 Скриншот к заявке №{claim_id}",
+                caption=f"{claim_text}",
                 reply_markup=keyboard  # Используем правильную клавиатуру
             )
         else:
@@ -344,7 +356,7 @@ async def finalize_claim(user_tg_id: int, state: FSMContext):
                 if i == 0:  # Только у первого фото может быть подпись
                     media_group.append(types.InputMediaPhoto(
                         media=fid,
-                        caption=f"{claim_text}\n\n📸 Скриншоты по заявке №{claim_id} ({len(photo_ids)} фото)"
+                        caption=f"{claim_text}"
                     ))
                 else:
                     media_group.append(types.InputMediaPhoto(media=fid))

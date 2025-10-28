@@ -67,11 +67,8 @@ async def receive_bank_id(msg: Message, state: FSMContext):
 
     # Отправляем клавиатуру с подтверждением
     await msg.answer(
-        text=f"✅ ID банка <code>{bank_member_id}</code> сохранен для заявки <b>{claim_id}</b>.\n\n"
-             f"<b>Выберите действие:</b>",
-        parse_mode="HTML",
-        reply_markup=tadmin.claim_action_ikb(claim_id) # Используем существующую клавиатуру с confirm/reject
-    )
+        text=f"✅ ID банка <code>{bank_member_id}</code> сохранен для заявки <b>{claim_id}</b>.",
+        parse_mode="HTML")
 
     await state.clear()
 
@@ -92,6 +89,46 @@ async def handle_reject_action(call: CallbackQuery):
     print(f"❌ Отклонение заявки: {claim_id}")
 
     await process_claim_rejection(call, claim_id)
+
+@router.callback_query(F.data.startswith("ban_"))
+async def handle_ban_action(call: CallbackQuery):
+    """Обработка кнопки '🚫 Заблокировать пользователя'"""
+    claim_id = call.data.replace("ban_", "")
+    claim = await Claim.get(claim_id=claim_id)
+    user_id = claim.user_id
+
+
+    await process_user_ban(call, user_id, claim_id)
+
+
+async def process_user_ban(call: CallbackQuery, user_id: int, claim_id: str):
+    """блокировка пользователя"""
+    try:
+        user = await User.get(tg_id=user_id)
+        if not user:
+            await call.answer("Пользователь не найден", show_alert=True)
+            return
+
+        await user.update(banned=True)
+        await call.answer("Пользователь заблокирован", show_alert=True)
+
+        print(f"🚫 Пользователь заблокирован {user_id}")
+
+        if call.message.photo:
+            current_caption = call.message.caption or ""
+            new_caption = f"🚫 Пользователь заблокирован\n\n{current_caption}"
+            await call.message.edit_caption(caption=new_caption, reply_markup=tadmin.claim_action_ikb(claim_id))
+        else:
+            current_text = call.message.text or ""
+            new_text = f"🚫 Пользователь заблокирован\n\n{current_text}"
+            await call.message.edit_text(text=new_text, reply_markup=tadmin.claim_action_ikb(claim_id))
+
+    except Exception as e:
+        print(f"❌ Ошибка блокировки пользователя: {e}")
+        import traceback
+        traceback.print_exc()
+        await call.answer("Ошибка блокировки пользователя", show_alert=True)
+
 
 async def process_claim_approval(call: CallbackQuery, claim_id: str):
     """Обработка подтверждения заявки: создание НОВОГО контрактора и платежа"""
@@ -206,11 +243,11 @@ async def process_claim_approval(call: CallbackQuery, claim_id: str):
             # === 6. Обновляем сообщение в группе ===
             if call.message.photo:
                 current_caption = call.message.caption or ""
-                new_caption = f"{current_caption}\n\n✅ Статус: Оплата подтверждена (ID: {payment_id})"
+                new_caption = f"{current_caption[:-14]} Подтверждено ✅"
                 await call.message.edit_caption(caption=new_caption, reply_markup=None)
             else:
                 current_text = call.message.text or ""
-                new_text = f"{current_text}\n\n✅ Статус: Оплата подтверждена (ID: {payment_id})"
+                new_text = f"{current_text[:-14]} Подтверждено ✅"
                 await call.message.edit_text(text=new_text, reply_markup=None)
 
             # === 7. Уведомляем пользователя ===
@@ -255,11 +292,11 @@ async def process_claim_rejection(call: CallbackQuery, claim_id: str):
         # Обновляем сообщение в группе
         if call.message.photo:
             current_caption = call.message.caption or ""
-            new_caption = f"{current_caption}\n\n❌ Статус: Заявка отклонена"
+            new_caption = f"{current_caption[:-14]} Отклонено ❌"
             await call.message.edit_caption(caption=new_caption, reply_markup=None)
         else:
             current_text = call.message.text or ""
-            new_text = f"{current_text}\n\n❌ Статус: Заявка отклонена"
+            new_text = f"{current_text[:-14]} Отклонено ❌"
             await call.message.edit_text(text=new_text, reply_markup=None)
 
         print(f"✏️ Сообщение обновлено (отклонено)")

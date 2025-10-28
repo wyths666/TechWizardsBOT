@@ -24,9 +24,11 @@ def claim_action_ikb_with_bank_button(claim_id: str) -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
     builder.button(text="🏦 Заполнить ID банка", callback_data=f"fill_bank_id_{claim_id}")
+    builder.button(text="✅ Подтвердить оплату", callback_data=f"confirm_{claim_id}")
+    builder.button(text="❌ Отклонить", callback_data=f"reject_{claim_id}")
     builder.button(text="💬 Написать пользователю", callback_data=f"message_{claim_id}")
     builder.button(text="👀 Просмотреть чат", callback_data=f"chat_{claim_id}")
-    builder.button(text="❌ Отклонить", callback_data=f"reject_{claim_id}")
+    builder.button(text="🚫 Заблокировать пользователя", callback_data=f"ban_{claim_id}")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -37,6 +39,7 @@ def claim_action_ikb(claim_id):
     builder.button(text="❌ Отклонить", callback_data=f"reject_{claim_id}")
     builder.button(text="💬 Написать пользователю", callback_data=f"message_{claim_id}")
     builder.button(text="👀 Просмотреть чат", callback_data=f"chat_{claim_id}")
+    builder.button(text="🚫 Заблокировать пользователя", callback_data=f"ban_{claim_id}")
     builder.adjust(1)
     return builder.as_markup()
 
