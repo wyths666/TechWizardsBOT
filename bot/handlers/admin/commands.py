@@ -109,6 +109,10 @@ async def process_user_ban(call: CallbackQuery, user_id: int, claim_id: str):
             await call.answer("Пользователь не найден", show_alert=True)
             return
 
+        if user.banned:
+            await call.answer("Пользователь уже заблокирован", show_alert=True)
+            return
+
         await user.update(banned=True)
         await call.answer("Пользователь заблокирован", show_alert=True)
 
